@@ -1,455 +1,313 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from './utils/supabase';
-import { Package, CreditCard, ShieldCheck, Plus, History, LogOut } from 'lucide-react';
 
-const BRANCHES = [
-  { id: 'b1', name: 'Sheriff Street (Georgetown)' },
-  { id: 'b2', name: 'Tower Main Street (Georgetown)' },
-  { id: 'b3', name: 'Diamond Public Road' },
-  { id: 'b4', name: 'Vreed-en-Hoop' },
-  { id: 'b5', name: 'New Amsterdam (Canje)' },
-  { id: 'b6', name: 'Skeldon (Corriverton)' },
-  { id: 'b7', name: 'Mahaica' },
-  { id: 'b8', name: 'West Bank Demerara' }
-];
+// Define the Member structure for TypeScript
+interface Member {
+  id: string;
+  name: string;
+  membership_type: 'Regular' | 'VIP';
+  card_number: string;
+  phone_number: string;
+  expiry_date: string;
+  branch_location: string;
+}
 
-export default function LyftGymSystem() {
-  // App Sync Hydration States
-  const [systemUsers, setSystemUsers] = useState<any[]>([]);
-  const [inventory, setInventory] = useState<any[]>([]);
-  const [inventoryLogs, setInventoryLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Auth States
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any | null>(null);
-  const [loginUsername, setLoginUsername] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+export default function LyftGymDashboard() {
+  // Authentication & Navigation States
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [activeTab, setActiveTab] = useState<'members' | 'register'>('members');
+  
+  // App Operational States
+  const [selectedBranch, setSelectedBranch] = useState('Downtown');
+  const [members, setMembers] = useState<Member[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Security Gate
-  const [securityGateUnlocked, setSecurityGateUnlocked] = useState(false);
-  const [masterPasswordInput, setMasterPasswordInput] = useState('');
-  const [masterPasswordError, setMasterPasswordError] = useState('');
+  // Registration Form States
+  const [newName, setNewName] = useState('');
+  const [newType, setNewType] = useState<'Regular' | 'VIP'>('Regular');
+  const [newCard, setNewCard] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newExpiry, setNewExpiry] = useState('');
 
-  // Admin New Account Inputs
-  const [regUsername, setRegUsername] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-  const [regFullName, setRegFullName] = useState('');
-  const [regRole, setRegRole] = useState('Front Desk Staff');
+  // Handle Login Authentication against Supabase system_users table
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
 
-  // Inventory Ingestion Inputs
-  const [newInvName, setNewInvName] = useState('');
-  const [newInvSku, setNewInvSku] = useState('');
-  const [newInvStock, setNewInvStock] = useState('');
-  const [newInvPrice, setNewInvPrice] = useState('');
-
-  // General Dashboard Controls
-  const [activeTab, setActiveTab] = useState('pos');
-  const [selectedBranch, setSelectedBranch] = useState('b1'); 
-  const [posCart, setPosCart] = useState<any[]>([]);
-
-  // Fetch live cloud database info
-  const fetchCloudDatabase = async () => {
-    setLoading(true);
     try {
-      const { data: usersData } = await supabase.from('system_users').select('*');
-      if (usersData) setSystemUsers(usersData);
+      const { data, error } = await supabase
+        .from('system_users')
+        .select('*')
+        .eq('username', username.toLowerCase().trim())
+        .single();
 
-      const { data: inventoryData } = await supabase.from('inventory').select('*');
-      if (inventoryData) setInventory(inventoryData);
+      if (error || !data || data.password !== password) {
+        setLoginError('Invalid application username or security access key.');
+        return;
+      }
 
-      const { data: logsData } = await supabase.from('inventory_logs').select('*').order('timestamp', { ascending: false });
-      if (logsData) setInventoryLogs(logsData);
+      setIsLoggedIn(true);
     } catch (err) {
-      console.error("Database connection fault:", err);
-    } finally {
-      setLoading(false);
+      setLoginError('Database connection error. Check your RLS settings.');
+    }
+  };
+
+  // Fetch members matching the currently selected branch
+  const fetchMembers = async () => {
+    const { data, error } = await supabase
+      .from('members')
+      .select('*')
+      .eq('branch_location', selectedBranch);
+    
+    if (!error && data) {
+      setMembers(data);
     }
   };
 
   useEffect(() => {
-    fetchCloudDatabase();
-  }, []);
-
-  const formatMoney = (amountInGYD: number) => {
-    return `GYD$ ${amountInGYD.toLocaleString()}`;
-  };
-
-  // Authentication Rules
-  const handleLogin = (e: any) => {
-    e.preventDefault();
-    setLoginError('');
-    const user = systemUsers.find(u => u.username.toLowerCase() === loginUsername.toLowerCase() && u.password === loginPassword);
-    if (user) {
-      setCurrentUser(user);
-      setIsAuthenticated(true);
-    } else {
-      setLoginError('Invalid application username or security access key.');
+    if (isLoggedIn) {
+      fetchMembers();
     }
-  };
+  }, [selectedBranch, isLoggedIn]);
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-    setLoginUsername('');
-    setLoginPassword('');
-    setSecurityGateUnlocked(false);
-    setMasterPasswordInput('');
-    setMasterPasswordError('');
-  };
-
-  const verifyMasterGate = (e: any) => {
+  // Submit new registration to Supabase
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (masterPasswordInput === 'SantanaRS14') {
-      setSecurityGateUnlocked(true);
-    } else {
-      setMasterPasswordError('Access Denied. Master password mismatch.');
-    }
-  };
+    if (!newName || !newCard) return alert('Name and Card Number are required.');
 
-  // User Creation Management
-  const provisionNewUser = async (e: any) => {
-    e.preventDefault();
-    if (!regUsername || !regPassword || !regFullName) return alert('Fill out all fields.');
-    
-    const { error } = await supabase.from('system_users').insert([{
-      username: regUsername,
-      password: regPassword,
-      name: regFullName,
-      role: regRole
+    const { error } = await supabase.from('members').insert([{
+      name: newName,
+      membership_type: newType,
+      card_number: newCard,
+      phone_number: newPhone,
+      expiry_date: newExpiry,
+      branch_location: selectedBranch
     }]);
 
     if (error) {
-      alert(`Cloud Mutation Exception: ${error.message}`);
+      alert('Error registering member: ' + error.message);
     } else {
-      alert(`Success: ${regFullName} saved in global database!`);
-      setRegUsername(''); setRegPassword(''); setRegFullName('');
-      fetchCloudDatabase();
+      // Clear form inputs & redirect to dashboard view
+      setNewName('');
+      setNewCard('');
+      setNewPhone('');
+      setNewExpiry('');
+      setActiveTab('members');
+      fetchMembers();
     }
   };
 
-  // Ingest/Add New Items to the Database
-  const handleAddInventoryItem = async (e: any) => {
-    e.preventDefault();
-    const stockNum = parseInt(newInvStock);
-    const priceNum = parseFloat(newInvPrice);
+  // Inline Real-Time Save Handlers
+  const handleInlineSave = async (id: string, updatedField: Partial<Member>) => {
+    const { error } = await supabase
+      .from('members')
+      .update(updatedField)
+      .eq('id', id);
 
-    if (!newInvName || !newInvSku || isNaN(stockNum) || isNaN(priceNum) || stockNum < 0 || priceNum < 0) {
-      return alert("Please fulfill standard item values accurately.");
-    }
-
-    const itemUuid = `I-${Math.floor(1000 + Math.random() * 9000)}`;
-    
-    const { error: invError } = await supabase.from('inventory').insert([{
-      id: itemUuid,
-      name: newInvName,
-      sku: newInvSku.toUpperCase().trim(),
-      stock: stockNum,
-      price_gyd: priceNum,
-      branch_id: selectedBranch
-    }]);
-
-    if (invError) return alert(`Failed to add item: ${invError.message}`);
-
-    await supabase.from('inventory_logs').insert([{
-      item_id: itemUuid,
-      item_name: newInvName,
-      sku: newInvSku.toUpperCase().trim(),
-      quantity_changed: stockNum,
-      action_type: 'RESTOCK'
-    }]);
-
-    alert("Product catalog index saved to cloud database.");
-    setNewInvName(''); setNewInvSku(''); setNewInvStock(''); setNewInvPrice('');
-    fetchCloudDatabase();
-  };
-
-  // Checkout Cart / Stock Reduction Functions
-  const addToCart = (product: any) => {
-    if (product.stock <= 0) return alert("Item out of stock!");
-    const existing = posCart.find(item => item.product.id === product.id);
-    if (existing) {
-      if (existing.quantity >= product.stock) return alert("Cannot exceed current stock level!");
-      setPosCart(posCart.map(item => item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
+    if (error) {
+      alert('Failed to update: ' + error.message);
     } else {
-      setPosCart([...posCart, { product, quantity: 1 }]);
+      setMembers(members.map(m => m.id === id ? { ...m, ...updatedField } : m));
     }
   };
 
-  const checkoutCart = async () => {
-    if (posCart.length === 0) return;
-
-    try {
-      for (const cartItem of posCart) {
-        const targetStockItem = inventory.find(i => i.id === cartItem.product.id);
-        const computedNextStockValue = targetStockItem.stock - cartItem.quantity;
-
-        await supabase.from('inventory').update({ stock: computedNextStockValue }).eq('id', cartItem.product.id);
-
-        await supabase.from('inventory_logs').insert([{
-          item_id: cartItem.product.id,
-          item_name: cartItem.product.name,
-          sku: cartItem.product.sku,
-          quantity_changed: -cartItem.quantity, 
-          action_type: 'CHECKOUT'
-        }]);
-      }
-
-      setPosCart([]);
-      alert("Items taken out successfully! Global tables updated.");
-      fetchCloudDatabase();
-    } catch (err) {
-      alert("An error occurred executing database updates.");
+  const handleDeleteMember = async (id: string) => {
+    if (confirm('Are you sure you want to cancel this membership profile?')) {
+      await supabase.from('members').delete().eq('id', id);
+      fetchMembers();
     }
   };
 
-  if (!isAuthenticated) {
+  // --- RENDER LOGIN GATE ---
+  if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center p-4">
-        <form onSubmit={handleLogin} className="w-full max-w-sm bg-[#121212] border border-[#222] p-6 rounded-xl space-y-4 shadow-2xl">
-          <div className="text-center">
-            <h2 className="text-xl font-bold text-white">Lyft Gym Cloud Network</h2>
-            <p className="text-xs text-gray-500 mt-1">Global Real-time Master Matrix</p>
+      <div className="min-h-screen bg-zinc-950 flex flex-col justify-center items-center px-4">
+        <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-xl p-8 shadow-2xl">
+          <div className="flex items-center gap-2 mb-6 justify-center">
+            <span className="text-red-600 font-black text-3xl tracking-tighter">LYFT</span>
+            <span className="text-zinc-100 font-light text-2xl tracking-wide">GYM MATRIX</span>
           </div>
-          {loginError && <p className="text-xs text-red-500 bg-red-950/30 p-2 rounded border border-red-900/50">{loginError}</p>}
-          <input type="text" placeholder="Username" value={loginUsername} onChange={e=>setLoginUsername(e.target.value)} className="w-full bg-[#1A1A1A] border border-[#333] p-2.5 rounded text-sm text-white outline-none focus:border-red-600" required />
-          <input type="password" placeholder="Access Password" value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} className="w-full bg-[#1A1A1A] border border-[#333] p-2.5 rounded text-sm text-white outline-none focus:border-red-600" required />
-          <button type="submit" className="w-full bg-red-600 text-white p-2.5 rounded font-bold hover:bg-red-500 transition-colors">Sign In</button>
-        </form>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-zinc-400 font-semibold mb-2">Username</label>
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 transition" placeholder="admin" required />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-zinc-400 font-semibold mb-2">Access Key</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 transition" placeholder="••••••••" required />
+            </div>
+            {loginError && <p className="text-red-500 text-sm font-medium bg-red-950/30 border border-red-900/50 p-3 rounded-lg">{loginError}</p>}
+            <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition tracking-wide uppercase text-sm mt-2 shadow-lg shadow-red-600/10">Authorize Terminal</button>
+          </form>
+        </div>
       </div>
     );
   }
 
+  // --- RENDER MAIN APPLICATION DASHBOARD ---
   return (
-    <div className="min-h-screen bg-[#0F0F0F] text-gray-100 flex flex-col md:flex-row">
-      {/* SIDEBAR */}
-      <aside className="w-full md:w-64 bg-[#161616] border-r border-[#262626] flex flex-col justify-between">
-        <div>
-          <div className="p-6 border-b border-[#262626] flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center font-black text-white text-xl shadow-lg shadow-red-600/20">LYFT</div>
-            <div>
-              <h1 className="text-sm font-bold text-white uppercase tracking-wider">Lyft Network</h1>
-              <p className="text-[10px] text-emerald-400 font-mono tracking-wider">DATABASE SYNC ACTIVE</p>
-            </div>
-          </div>
-
-          <div className="p-3 bg-[#1A1A1A] m-3 rounded border border-[#2A2A2A] space-y-2">
-            <label className="text-[10px] font-bold text-gray-400 uppercase block">Active Branch Node</label>
-            <select className="bg-[#121212] border border-[#333] p-1.5 rounded w-full text-xs text-white outline-none" value={selectedBranch} onChange={e=>{setSelectedBranch(e.target.value); setPosCart([]);}}>
-              {BRANCHES.map(b => <option key={b.id} value={b.id} className="bg-[#161616]">{b.name}</option>)}
-            </select>
-          </div>
-
-          <nav className="p-3 space-y-1">
-            <button type="button" onClick={() => setActiveTab('pos')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-all ${activeTab==='pos'?'bg-red-600 text-white shadow-md shadow-red-600/10':'text-gray-400 hover:bg-zinc-800/50'}`}><CreditCard size={16}/> POS Register</button>
-            <button type="button" onClick={() => setActiveTab('inventory')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-all ${activeTab==='inventory'?'bg-red-600 text-white shadow-md shadow-red-600/10':'text-gray-400 hover:bg-zinc-800/50'}`}><Package size={16}/> Inventory & Audit Logs</button>
-            <button type="button" onClick={() => setActiveTab('security')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-all ${activeTab==='security'?'bg-red-600 text-white shadow-md shadow-red-600/10':'text-gray-400 hover:bg-zinc-800/50'}`}><ShieldCheck size={16}/> Security System</button>
-          </nav>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">
+      {/* Global Navigation Header */}
+      <header className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-red-600 font-black text-2xl tracking-tighter">LYFT</span>
+          <span className="text-zinc-400 font-light text-xl">NETWORK CLOUD</span>
         </div>
-
-        <div className="p-4 bg-[#121212] border-t border-[#262626] flex items-center justify-between">
-          <div className="text-xs">
-            <p className="font-bold text-white">{currentUser?.name}</p>
-            <p className="text-[10px] text-gray-500 font-mono">{currentUser?.role}</p>
-          </div>
-          <button type="button" onClick={handleLogout} className="p-1.5 bg-zinc-900 border border-[#2b2b2b] text-gray-400 hover:text-red-400 rounded transition-colors" title="Logout"><LogOut size={14}/></button>
+        
+        {/* Branch Selector Switch */}
+        <div className="flex items-center gap-3">
+          <label className="text-xs uppercase tracking-wider text-zinc-400 font-bold">Active Branch:</label>
+          <select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)} className="bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-1.5 focus:outline-none focus:border-red-600 font-medium">
+            <option value="Downtown">Downtown Main</option>
+            <option value="Northside">Northside Elite</option>
+            <option value="WestEnd">West End Center</option>
+          </select>
         </div>
-      </aside>
+      </header>
 
-      {/* VIEWPORT BODY */}
-      <main className="flex-1 p-6 overflow-y-auto">
-        {loading ? (
-          <div className="text-center py-24 text-sm font-mono text-gray-400 animate-pulse">Synchronizing database cloud records...</div>
-        ) : (
-          <>
-            {/* POS REGISTER PANEL */}
-            {activeTab === 'pos' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {inventory.filter(item => item.branch_id === selectedBranch).length === 0 ? (
-                    <div className="sm:col-span-2 bg-[#161616] border border-[#262626] p-12 text-center rounded-xl text-gray-500 text-sm">
-                      No stock records found for this location. Head over to the Inventory tab to add your first item!
-                    </div>
-                  ) : (
-                    inventory.filter(item => item.branch_id === selectedBranch).map(product => (
-                      <div key={product.id} onClick={() => addToCart(product)} className="bg-[#161616] border border-[#262626] p-5 rounded-xl cursor-pointer hover:border-red-600 transition-all flex flex-col justify-between group">
-                        <div>
-                          <div className="flex justify-between text-xs text-gray-500 mb-1 font-mono"><span>{product.sku}</span><span className={product.stock <= 5 ? 'text-red-400 font-bold' : 'text-emerald-400'}>{product.stock} remaining</span></div>
-                          <h4 className="font-bold text-white group-hover:text-red-400 transition-colors">{product.name}</h4>
-                        </div>
-                        <div className="flex justify-between items-center mt-4 pt-2 border-t border-[#222]">
-                          <span className="font-black text-white text-base">{formatMoney(product.price_gyd)}</span>
-                          <span className="p-1 bg-zinc-800 text-gray-400 group-hover:bg-red-600 group-hover:text-white rounded transition-colors"><Plus size={14}/></span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+      <div className="flex flex-1 flex-col md:flex-row">
+        {/* Navigation Sidebar */}
+        <nav className="w-full md:w-64 bg-zinc-900/50 border-r border-zinc-800 p-4 space-y-2">
+          <button onClick={() => setActiveTab('members')} className={`w-full text-left px-4 py-3 rounded-xl font-medium transition flex items-center gap-3 ${activeTab === 'members' ? 'bg-red-600 text-white shadow-lg shadow-red-600/10' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'}`}>
+            👥 Members Directory
+          </button>
+          <button onClick={() => setActiveTab('register')} className={`w-full text-left px-4 py-3 rounded-xl font-medium transition flex items-center gap-3 ${activeTab === 'register' ? 'bg-red-600 text-white shadow-lg shadow-red-600/10' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'}`}>
+            📝 Register New Member
+          </button>
+          <hr className="border-zinc-800 my-4" />
+          <button onClick={() => setIsLoggedIn(false)} className="w-full text-left px-4 py-3 rounded-xl font-medium text-zinc-500 hover:bg-red-950/20 hover:text-red-400 transition">
+            🔒 Disconnect Terminal
+          </button>
+        </nav>
 
-                {/* BASKET SIDE PANEL */}
-                <div className="bg-[#161616] border border-[#262626] p-5 rounded-xl flex flex-col justify-between h-fit space-y-4">
-                  <div>
-                    <h3 className="font-bold text-white border-b border-[#262626] pb-2 mb-2 text-sm uppercase tracking-wider text-gray-400">Items to Take Out</h3>
-                    {posCart.length === 0 ? (
-                      <p className="text-xs text-gray-500 py-6 text-center">Your checkout tray is completely empty.</p>
-                    ) : (
-                      posCart.map(item => (
-                        <div key={item.product.id} className="flex justify-between text-sm py-2 border-b border-zinc-800/30">
-                          <div>
-                            <p className="font-semibold text-white">{item.product.name}</p>
-                            <p className="text-xs text-red-400">{item.quantity} unit{item.quantity > 1 ? 's' : ''} being removed</p>
-                          </div>
-                          <span className="font-mono text-gray-300 self-center">{formatMoney(item.product.price_gyd * item.quantity)}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  {posCart.length > 0 && (
-                    <div className="border-t border-[#262626] pt-3 space-y-3">
-                      <div className="flex justify-between text-sm"><span className="text-gray-400">Total Valuation</span><span className="font-bold font-mono text-white text-base">{formatMoney(posCart.reduce((acc, item) => acc + (item.product.price_gyd * item.quantity), 0))}</span></div>
-                      <button type="button" onClick={checkoutCart} className="w-full bg-red-600 text-white font-bold py-2.5 rounded text-sm hover:bg-red-500 transition-colors uppercase tracking-wider text-xs">
-                        Confirm Storage Take-Out
-                      </button>
-                      <button type="button" onClick={() => setPosCart([])} className="w-full bg-zinc-900 border border-zinc-800 text-gray-400 font-semibold py-1.5 rounded text-xs hover:text-white transition-colors">Clear Selection</button>
-                    </div>
-                  )}
+        {/* Dynamic Content Panel */}
+        <main className="flex-1 p-6 md:p-8">
+          
+          {/* TAB 1: MEMBERS DIRECTORY VIEW WITH INLINE EDITING */}
+          {activeTab === 'members' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-tight">{selectedBranch} Roster</h1>
+                  <p className="text-sm text-zinc-400">Manage, modify, and monitor active database entries in real time.</p>
                 </div>
               </div>
-            )}
 
-            {/* INVENTORY & LOGS PANEL */}
-            {activeTab === 'inventory' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                  {/* INVENTORY ITEM CREATION */}
-                  <div className="bg-[#161616] border border-[#262626] p-5 rounded-xl h-fit">
-                    <h3 className="font-bold text-white mb-3 text-sm uppercase tracking-wider text-gray-400 flex items-center gap-2"><Plus size={16} className="text-red-500" /> Add New Product Profile</h3>
-                    <form onSubmit={handleAddInventoryItem} className="space-y-3">
-                      <div><label className="text-xs text-gray-400 block mb-1">Product Display Name</label><input type="text" value={newInvName} onChange={e=>setNewInvName(e.target.value)} placeholder="e.g. Protein Powder" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600" required /></div>
-                      <div><label className="text-xs text-gray-400 block mb-1">SKU Unique Serial Identifier</label><input type="text" value={newInvSku} onChange={e=>setNewInvSku(e.target.value)} placeholder="e.g. WHEY-01" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600 font-mono" required /></div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div><label className="text-xs text-gray-400 block mb-1">Starting Stock</label><input type="number" min="0" value={newInvStock} onChange={e=>setNewInvStock(e.target.value)} placeholder="0" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600" required /></div>
-                        <div><label className="text-xs text-gray-400 block mb-1">Unit Price (GYD)</label><input type="number" min="0" value={newInvPrice} onChange={e=>setNewInvPrice(e.target.value)} placeholder="15000" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600" required /></div>
-                      </div>
-                      <button type="submit" className="w-full bg-red-600 text-white py-2 rounded font-bold text-xs tracking-wider uppercase mt-2 hover:bg-red-500 transition-colors">Publish Asset to Database</button>
-                    </form>
-                  </div>
-
-                  {/* STOCK MATRIX TABLE */}
-                  <div className="xl:col-span-2 bg-[#161616] border border-[#262626] rounded-xl overflow-hidden flex flex-col justify-between">
-                    <div>
-                      <div className="p-4 bg-[#121212] border-b border-[#262626] font-bold text-xs uppercase tracking-wider text-gray-400">Current Storage On-Hand Matrix</div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm">
-                          <thead>
-                            <tr className="border-b border-[#262626] bg-[#111] text-xs text-gray-400">
-                              <th className="p-3">SKU Code</th>
-                              <th className="p-3">Title Description</th>
-                              <th className="p-3">Available Stock Volume</th>
-                              <th className="p-3">Price Point</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-[#222]">
-                            {inventory.filter(i=>i.branch_id===selectedBranch).length === 0 ? (
-                              <tr><td colSpan={4} className="text-center py-8 text-gray-500 text-xs">No warehouse stock catalogued here.</td></tr>
-                            ) : (
-                              inventory.filter(i=>i.branch_id===selectedBranch).map(item => (
-                                <tr key={item.id} className="hover:bg-[#1A1A1A]/40 transition-colors">
-                                  <td className="p-3 font-mono text-xs text-gray-500">{item.sku}</td>
-                                  <td className="p-3 font-bold text-white">{item.name}</td>
-                                  <td className="p-3"><span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${item.stock <= 5 ? 'bg-red-950 text-red-400 border border-red-900/40':'bg-zinc-800 text-zinc-300'}`}>{item.stock} units</span></td>
-                                  <td className="p-3 text-white font-medium font-mono text-xs">{formatMoney(item.price_gyd)}</td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* HISTORICAL REMOVAL LOGS */}
-                <div className="bg-[#161616] border border-[#262626] rounded-xl overflow-hidden shadow-xl">
-                  <div className="p-4 bg-[#121212] border-b border-[#262626] flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-gray-400">
-                    <History size={14} className="text-red-500"/> Real-time Operational Removal & Auditing History Log
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-[#262626] bg-[#111] text-gray-400 uppercase tracking-wider text-[10px]">
-                          <th className="p-3">Timestamp Signature</th>
-                          <th className="p-3">Catalog Item Description</th>
-                          <th className="p-3">SKU Identifier</th>
-                          <th className="p-3">Transaction Ingestion Node</th>
-                          <th className="p-3 text-right">Deduction / Addition Magnitude</th>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-950 border-b border-zinc-800 text-xs uppercase tracking-wider text-zinc-400 font-bold">
+                        <th className="py-4 px-6">Full Name</th>
+                        <th className="py-4 px-6">Tier</th>
+                        <th className="py-4 px-6">Access Card #</th>
+                        <th className="py-4 px-6">Phone System</th>
+                        <th className="py-4 px-6">Expiry Cycle</th>
+                        <th className="py-4 px-6 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800 text-sm">
+                      {members.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-8 text-zinc-500 italic">No registered members found at this branch location.</td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#222] font-mono text-xs">
-                        {inventoryLogs.length === 0 ? (
-                          <tr><td colSpan={5} className="text-center py-8 text-gray-600">No storage modifications recorded across the database cluster stack yet.</td></tr>
-                        ) : (
-                          inventoryLogs.map(log => (
-                            <tr key={log.id} className="hover:bg-[#1A1A1A]/30 transition-colors">
-                              <td className="p-3 text-gray-500">{new Date(log.timestamp).toLocaleString()}</td>
-                              <td className="p-3 text-white font-sans font-semibold text-sm">{log.item_name}</td>
-                              <td className="p-3 text-zinc-400 font-bold">{log.sku}</td>
-                              <td className="p-3">
-                                <span className={`px-2 py-0.5 rounded text-[9px] font-black tracking-wider ${log.action_type==='CHECKOUT'?'bg-amber-950/80 text-amber-400 border border-amber-900/30':'bg-emerald-950/80 text-emerald-400 border border-emerald-900/30'}`}>
-                                  {log.action_type === 'CHECKOUT' ? 'TAKEN OUT / SOLD' : 'RESTOCKED / INGESTED'}
-                                </span>
-                              </td>
-                              <td className={`p-3 text-right font-black text-sm ${log.quantity_changed < 0 ? 'text-red-400':'text-emerald-400'}`}>
-                                {log.quantity_changed > 0 ? `+${log.quantity_changed}` : log.quantity_changed}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                      ) : (
+                        members.map((member) => (
+                          <tr key={member.id} className="hover:bg-zinc-800/30 transition">
+                            {/* Inline Editable Name */}
+                            <td className="py-4 px-6">
+                              <input type="text" defaultValue={member.name} onBlur={(e) => handleInlineSave(member.id, { name: e.target.value })} className="bg-transparent border-b border-transparent hover:border-zinc-700 focus:border-red-600 focus:bg-zinc-950 px-1 py-0.5 rounded text-zinc-100 focus:outline-none transition font-medium w-full" />
+                            </td>
+                            {/* Inline Editable Membership Type Dropdown */}
+                            <td className="py-4 px-6">
+                              <select defaultValue={member.membership_type} onChange={(e) => handleInlineSave(member.id, { membership_type: e.target.value as 'Regular' | 'VIP' })} className="bg-transparent hover:bg-zinc-800 border-none font-semibold focus:ring-1 focus:ring-red-600 rounded px-1 text-zinc-300 focus:outline-none">
+                                <option value="Regular" className="bg-zinc-900">Regular</option>
+                                <option value="VIP" className="bg-zinc-900 text-yellow-500">★ VIP</option>
+                              </select>
+                            </td>
+                            {/* Inline Editable Card Number */}
+                            <td className="py-4 px-6 font-mono text-zinc-300">
+                              <input type="text" defaultValue={member.card_number} onBlur={(e) => handleInlineSave(member.id, { card_number: e.target.value })} className="bg-transparent border-b border-transparent hover:border-zinc-700 focus:border-red-600 focus:bg-zinc-950 px-1 py-0.5 rounded w-full focus:outline-none font-mono" />
+                            </td>
+                            {/* Inline Editable Phone Number */}
+                            <td className="py-4 px-6 text-zinc-300">
+                              <input type="text" defaultValue={member.phone_number} onBlur={(e) => handleInlineSave(member.id, { phone_number: e.target.value })} className="bg-transparent border-b border-transparent hover:border-zinc-700 focus:border-red-600 focus:bg-zinc-950 px-1 py-0.5 rounded w-full focus:outline-none" />
+                            </td>
+                            {/* Inline Editable Expiry Date */}
+                            <td className="py-4 px-6">
+                              <input type="date" defaultValue={member.expiry_date} onChange={(e) => handleInlineSave(member.id, { expiry_date: e.target.value })} className="bg-transparent hover:bg-zinc-800 border-none rounded text-zinc-300 focus:outline-none p-1" />
+                            </td>
+                            {/* Action Operations */}
+                            <td className="py-4 px-6 text-center">
+                              <button onClick={() => handleDeleteMember(member.id)} className="text-zinc-500 hover:text-red-400 p-1 transition" title="Revoke Profile">
+                                🗑️ Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* SECURITY ARCHITECTURE PANEL */}
-            {activeTab === 'security' && (
-              <div className="max-w-md mx-auto bg-[#161616] border border-[#262626] p-6 rounded-xl shadow-xl">
-                {!securityGateUnlocked ? (
-                  <form onSubmit={verifyMasterGate} className="space-y-4">
-                    <div className="text-center">
-                      <h3 className="font-bold text-white text-sm uppercase tracking-wider">Elevated Access Authorization</h3>
-                      <p className="text-xs text-gray-500 mt-1">Provide master encryption key to authorize changes</p>
-                    </div>
-                    {masterPasswordError && <p className="text-xs text-red-500 bg-red-950/20 p-2 rounded border border-red-900/40 text-center">{masterPasswordError}</p>}
-                    <input type="password" placeholder="Enter System Master Key" value={masterPasswordInput} onChange={e=>setMasterPasswordInput(e.target.value)} className="w-full bg-[#1A1A1A] border border-[#333] p-2 rounded text-center text-white outline-none focus:border-red-600 text-sm" required />
-                    <button type="submit" className="w-full bg-amber-500 text-black py-2 rounded font-bold text-xs uppercase tracking-wider hover:bg-amber-400 transition-colors">Verify Credentials</button>
-                  </form>
-                ) : (
-                  <form onSubmit={provisionNewUser} className="space-y-3">
-                    <h3 className="font-bold text-white text-xs uppercase tracking-wider text-emerald-400 mb-2">Create New System Operator Key</h3>
-                    <div><label className="text-xs text-gray-400 block mb-1">Username Handle</label><input type="text" placeholder="e.g. jdoe" value={regUsername} onChange={e=>setRegUsername(e.target.value)} className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none" required /></div>
-                    <div><label className="text-xs text-gray-400 block mb-1">Secret Login Passphrase Pin</label><input type="password" placeholder="••••••••" value={regPassword} onChange={e=>setRegPassword(e.target.value)} className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none" required /></div>
-                    <div><label className="text-xs text-gray-400 block mb-1">Operator Full Name Description</label><input type="text" placeholder="e.g. John Doe" value={regFullName} onChange={e=>setRegFullName(e.target.value)} className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none" required /></div>
-                    <div>
-                      <label className="text-xs text-gray-400 block mb-1">Account Authorization Tier Role</label>
-                      <select value={regRole} onChange={e=>setRegRole(e.target.value)} className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none">
-                        <option value="Admin">Admin (Full Control)</option>
-                        <option value="Branch Manager">Branch Manager (Restricted Management)</option>
-                        <option value="Front Desk Staff">Front Desk Staff (Read/POS Only)</option>
-                      </select>
-                    </div>
-                    <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded font-bold text-xs uppercase tracking-wider hover:bg-emerald-500 transition-colors mt-2">Save Staff Credentials</button>
-                  </form>
-                )}
+          {/* TAB 2: SYSTEM REGISTRATION PORTAL */}
+          {activeTab === 'register' && (
+            <div className="max-w-2xl space-y-6">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">Register System Asset</h1>
+                <p className="text-sm text-zinc-400">Deploy a new access profile straight into the active database infrastructure for <strong>{selectedBranch}</strong>.</p>
               </div>
-            )}
-          </>
-        )}
-      </main>
+
+              <form onSubmit={handleRegister} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 shadow-xl">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs uppercase tracking-wider text-zinc-400 font-bold mb-2">Full Legal Name</label>
+                    <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-600 transition" placeholder="e.g. John Doe" required />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wider text-zinc-400 font-bold mb-2">Membership Status Tier</label>
+                    <select value={newType} onChange={(e) => setNewType(e.target.value as 'Regular' | 'VIP')} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-600 transition font-medium">
+                      <option value="Regular">Regular Class Access</option>
+                      <option value="VIP">VIP Priority Pass</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs uppercase tracking-wider text-zinc-400 font-bold mb-2">RFID Access Card String</label>
+                    <input type="text" value={newCard} onChange={(e) => setNewCard(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-600 transition font-mono" placeholder="e.g. LYFT-4892A" required />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-wider text-zinc-400 font-bold mb-2">Contact Telephone</label>
+                    <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-600 transition" placeholder="e.g. +1 (555) 019-2834" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs uppercase tracking-wider text-zinc-400 font-bold mb-2">Contract Term Expiration Date</label>
+                  <input type="date" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-600 transition" />
+                </div>
+
+                <div className="pt-2">
+                  <button type="submit" className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition tracking-wide uppercase text-xs shadow-md shadow-red-600/10">
+                    Commit Registration File
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+        </main>
+      </div>
     </div>
   );
 }
