@@ -31,7 +31,7 @@ export default function LyftGymSystemMaster() {
   const [loginError, setLoginError] = useState('');
   const [activeTab, setActiveTab] = useState<'members' | 'register' | 'pos' | 'inventory' | 'analytics'>('members');
   
-  // Set default initial location to Sheriff Street
+  // Guyana Branch System Selection Configurations
   const [selectedBranch, setSelectedBranch] = useState('Sheriff Street');
 
   // Core Data Arrays
@@ -47,14 +47,14 @@ export default function LyftGymSystemMaster() {
 
   // POS Module States
   const [posCart, setPosCart] = useState<{ item: InventoryItem; quantity: number }[]>([]);
-  const [posTaxRate] = useState(0.14); // Updated to 14% Guyana VAT standard
+  const [posTaxRate] = useState(0.14); // 14% Guyana VAT standard
   const [cashReceived, setCashReceived] = useState<string>('');
 
   // Inventory Registration Form States
   const [invName, setInvName] = useState('');
   const [invCategory, setInvCategory] = useState('Supplements');
   const [invStock, setInvStock] = useState<number>(50);
-  const [invPrice, setInvPrice] = useState<number>(1500); // Shifted defaults toward GYD metrics
+  const [invPrice, setInvPrice] = useState<number>(1500); 
 
   // Digital Calculator Component States
   const [calcDisplay, setCalcDisplay] = useState('0');
@@ -84,13 +84,21 @@ export default function LyftGymSystemMaster() {
 
   // Synchronized Data Fetching
   const refreshCoreDatabaseData = async () => {
-    // 1. Fetch Members by unique branch location
-    const { data: memData } = await supabase.from('members').select('*').eq('branch_location', selectedBranch);
-    if (memData) setMembers(memData);
+    // 1. Fetch Members
+    const { data: memData, error: memError } = await supabase.from('members').select('*').eq('branch_location', selectedBranch);
+    if (memError) {
+      console.error('Error reading members table:', memError);
+    } else if (memData) {
+      setMembers(memData);
+    }
 
-    // 2. Fetch Inventory Items by unique branch location
-    const { data: invData } = await supabase.from('inventory').select('*').eq('branch_location', selectedBranch);
-    if (invData) setInventory(invData);
+    // 2. Fetch Inventory Items
+    const { data: invData, error: invError } = await supabase.from('inventory').select('*').eq('branch_location', selectedBranch);
+    if (invError) {
+      console.error('Error reading inventory table:', invError);
+    } else if (invData) {
+      setInventory(invData);
+    }
   };
 
   useEffect(() => {
@@ -99,29 +107,46 @@ export default function LyftGymSystemMaster() {
     }
   }, [selectedBranch, isLoggedIn]);
 
-  // Submit Member Registration
+  // DIAGNOSTIC FAST-FIX INJECTION: Member Registration
   const handleRegisterMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName || !newCard) return alert('Data missing.');
+    if (!newName || !newCard) return alert('Data missing: Name and Card Number are required.');
+    
+    console.log('Sending member profile packet to Supabase...', { name: newName, card: newCard, branch: selectedBranch });
+    
     const { error } = await supabase.from('members').insert([{
       name: newName, membership_type: newType, card_number: newCard,
       phone_number: newPhone, expiry_date: newExpiry, branch_location: selectedBranch
     }]);
-    if (!error) {
+    
+    if (error) {
+      alert(`⚠️ DATABASE ERROR REGISTERING MEMBER:\n\nMessage: ${error.message}\nCode: ${error.code}\nHint: ${error.hint || 'Check if table structure/types match perfectly or if RLS is enabled.'}`);
+      console.error('Supabase Error Details:', error);
+    } else {
+      alert('🎉 Member successfully added to the database!');
       setNewName(''); setNewCard(''); setNewPhone(''); setNewExpiry('');
-      setActiveTab('members'); refreshCoreDatabaseData();
+      setActiveTab('members'); 
+      refreshCoreDatabaseData();
     }
   };
 
-  // Submit Inventory Registration
+  // DIAGNOSTIC FAST-FIX INJECTION: Inventory Asset Addition
   const handleRegisterInventory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!invName) return alert('Item name required.');
+    if (!invName) return alert('Item name is required.');
+    
+    console.log('Sending asset allocation packet to Supabase...', { item: invName, quantity: invStock, price: invPrice, branch: selectedBranch });
+
     const { error } = await supabase.from('inventory').insert([{
       item_name: invName, category: invCategory, stock_count: Number(invStock),
       unit_price: Number(invPrice), branch_location: selectedBranch
     }]);
-    if (!error) {
+    
+    if (error) {
+      alert(`⚠️ DATABASE ERROR ADDING INVENTORY ASSET:\n\nMessage: ${error.message}\nCode: ${error.code}\nHint: ${error.hint || 'Check if your inventory table columns are strictly lowercase or if RLS is blocked.'}`);
+      console.error('Supabase Error Details:', error);
+    } else {
+      alert('🎉 Asset successfully updated in the live inventory ledger!');
       setInvName(''); setInvStock(50); setInvPrice(1500);
       refreshCoreDatabaseData();
     }
@@ -129,13 +154,21 @@ export default function LyftGymSystemMaster() {
 
   // Inline Modifications for Data Tables
   const updateMemberRow = async (id: string, updatedField: Partial<Member>) => {
-    await supabase.from('members').update(updatedField).eq('id', id);
-    setMembers(members.map(m => m.id === id ? { ...m, ...updatedField } : m));
+    const { error } = await supabase.from('members').update(updatedField).eq('id', id);
+    if (error) {
+      alert('Real-time sync failed: ' + error.message);
+    } else {
+      setMembers(members.map(m => m.id === id ? { ...m, ...updatedField } : m));
+    }
   };
 
   const updateInventoryRow = async (id: string, updatedField: Partial<InventoryItem>) => {
-    await supabase.from('inventory').update(updatedField).eq('id', id);
-    setInventory(inventory.map(i => i.id === id ? { ...i, ...updatedField } : i));
+    const { error } = await supabase.from('inventory').update(updatedField).eq('id', id);
+    if (error) {
+      alert('Real-time sync failed: ' + error.message);
+    } else {
+      setInventory(inventory.map(i => i.id === id ? { ...i, ...updatedField } : i));
+    }
   };
 
   // POS Operational Controls
@@ -215,7 +248,7 @@ export default function LyftGymSystemMaster() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">
-      {/* Top Application Ribbon with Guyana Branches */}
+      {/* Top Navigation Frame */}
       <header className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-2">
           <span className="text-red-600 font-black text-2xl tracking-tighter">LYFT</span>
@@ -223,7 +256,7 @@ export default function LyftGymSystemMaster() {
         </div>
         
         <div className="flex items-center gap-2">
-          <label className="text-xs uppercase tracking-wider text-zinc-400 font-bold">Active Branch:</label>
+          <label className="text-xs uppercase tracking-wider text-zinc-400 font-bold">Active Branch Node:</label>
           <select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)} className="bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-1.5 focus:border-red-600 font-medium text-sm">
             <option value="Sheriff Street">Sheriff Street</option>
             <option value="Tower">Tower</option>
