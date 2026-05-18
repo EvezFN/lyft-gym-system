@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --color-lyft-red: #E53E3E;
+  --color-lyft-black: #0F0F0F;
+  --color-lyft-dark-gray: #161616;
+  --color-lyft-border-gray: #262626;
+}
+
+body {
+  background-color: #0F0F0F;
+  color: #F3F4F6;
+}
