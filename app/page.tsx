@@ -2,9 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from './utils/supabase';
-import { 
-  Package, CreditCard, ShieldCheck, Plus, History, LogOut
-} from 'lucide-react';
+import { Package, CreditCard, ShieldCheck, Plus, History, LogOut } from 'lucide-react';
 
 const BRANCHES = [
   { id: 'b1', name: 'Sheriff Street (Georgetown)' },
@@ -51,9 +49,9 @@ export default function LyftGymSystem() {
   // General Dashboard Controls
   const [activeTab, setActiveTab] = useState('pos');
   const [selectedBranch, setSelectedBranch] = useState('b1'); 
-  const [posCart, setPosCart] = useState<{product: any, quantity: number}[]>([]);
+  const [posCart, setPosCart] = useState<any[]>([]);
 
-  // 1. Fetch live cloud database info on initialization
+  // Fetch live cloud database info
   const fetchCloudDatabase = async () => {
     setLoading(true);
     try {
@@ -80,8 +78,8 @@ export default function LyftGymSystem() {
     return `GYD$ ${amountInGYD.toLocaleString()}`;
   };
 
-  // 2. Authentication Rules
-  const handleLogin = (e: React.FormEvent) => {
+  // Authentication Rules
+  const handleLogin = (e: any) => {
     e.preventDefault();
     setLoginError('');
     const user = systemUsers.find(u => u.username.toLowerCase() === loginUsername.toLowerCase() && u.password === loginPassword);
@@ -103,7 +101,7 @@ export default function LyftGymSystem() {
     setMasterPasswordError('');
   };
 
-  const verifyMasterGate = (e: React.FormEvent) => {
+  const verifyMasterGate = (e: any) => {
     e.preventDefault();
     if (masterPasswordInput === 'SantanaRS14') {
       setSecurityGateUnlocked(true);
@@ -112,8 +110,8 @@ export default function LyftGymSystem() {
     }
   };
 
-  // 3. User Creation Management
-  const provisionNewUser = async (e: React.FormEvent) => {
+  // User Creation Management
+  const provisionNewUser = async (e: any) => {
     e.preventDefault();
     if (!regUsername || !regPassword || !regFullName) return alert('Fill out all fields.');
     
@@ -133,8 +131,8 @@ export default function LyftGymSystem() {
     }
   };
 
-  // 4. Ingest/Add New Items to the Database
-  const handleAddInventoryItem = async (e: React.FormEvent) => {
+  // Ingest/Add New Items to the Database
+  const handleAddInventoryItem = async (e: any) => {
     e.preventDefault();
     const stockNum = parseInt(newInvStock);
     const priceNum = parseFloat(newInvPrice);
@@ -145,7 +143,6 @@ export default function LyftGymSystem() {
 
     const itemUuid = `I-${Math.floor(1000 + Math.random() * 9000)}`;
     
-    // Send new item row info up to Supabase
     const { error: invError } = await supabase.from('inventory').insert([{
       id: itemUuid,
       name: newInvName,
@@ -157,7 +154,6 @@ export default function LyftGymSystem() {
 
     if (invError) return alert(`Failed to add item: ${invError.message}`);
 
-    // Create a history transaction row to track the addition event
     await supabase.from('inventory_logs').insert([{
       item_id: itemUuid,
       item_name: newInvName,
@@ -171,7 +167,7 @@ export default function LyftGymSystem() {
     fetchCloudDatabase();
   };
 
-  // 5. Checkout Cart / Stock Reduction Functions
+  // Checkout Cart / Stock Reduction Functions
   const addToCart = (product: any) => {
     if (product.stock <= 0) return alert("Item out of stock!");
     const existing = posCart.find(item => item.product.id === product.id);
@@ -191,15 +187,13 @@ export default function LyftGymSystem() {
         const targetStockItem = inventory.find(i => i.id === cartItem.product.id);
         const computedNextStockValue = targetStockItem.stock - cartItem.quantity;
 
-        // Deduct remaining item quantity amounts inside the Supabase cloud table row
         await supabase.from('inventory').update({ stock: computedNextStockValue }).eq('id', cartItem.product.id);
 
-        // Append a formal deduction entry to the historical auditing tracking tables
         await supabase.from('inventory_logs').insert([{
           item_id: cartItem.product.id,
           item_name: cartItem.product.name,
           sku: cartItem.product.sku,
-          quantity_changed: -cartItem.quantity, // Stored as a negative number to represent removal
+          quantity_changed: -cartItem.quantity, 
           action_type: 'CHECKOUT'
         }]);
       }
@@ -250,9 +244,9 @@ export default function LyftGymSystem() {
           </div>
 
           <nav className="p-3 space-y-1">
-            <button onClick={() => setActiveTab('pos')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-all ${activeTab==='pos'?'bg-red-600 text-white shadow-md shadow-red-600/10':'text-gray-400 hover:bg-zinc-800/50'}`}><CreditCard size={16}/> POS Register</button>
-            <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-all ${activeTab==='inventory'?'bg-red-600 text-white shadow-md shadow-red-600/10':'text-gray-400 hover:bg-zinc-800/50'}`}><Package size={16}/> Inventory & Audit Logs</button>
-            <button onClick={() => setActiveTab('security')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-all ${activeTab==='security'?'bg-red-600 text-white shadow-md shadow-red-600/10':'text-gray-400 hover:bg-zinc-800/50'}`}><ShieldCheck size={16}/> Security System</button>
+            <button type="button" onClick={() => setActiveTab('pos')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-all ${activeTab==='pos'?'bg-red-600 text-white shadow-md shadow-red-600/10':'text-gray-400 hover:bg-zinc-800/50'}`}><CreditCard size={16}/> POS Register</button>
+            <button type="button" onClick={() => setActiveTab('inventory')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-all ${activeTab==='inventory'?'bg-red-600 text-white shadow-md shadow-red-600/10':'text-gray-400 hover:bg-zinc-800/50'}`}><Package size={16}/> Inventory & Audit Logs</button>
+            <button type="button" onClick={() => setActiveTab('security')} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-all ${activeTab==='security'?'bg-red-600 text-white shadow-md shadow-red-600/10':'text-gray-400 hover:bg-zinc-800/50'}`}><ShieldCheck size={16}/> Security System</button>
           </nav>
         </div>
 
@@ -261,17 +255,17 @@ export default function LyftGymSystem() {
             <p className="font-bold text-white">{currentUser?.name}</p>
             <p className="text-[10px] text-gray-500 font-mono">{currentUser?.role}</p>
           </div>
-          <button onClick={handleLogout} className="p-1.5 bg-zinc-900 border border-[#2b2b2b] text-gray-400 hover:text-red-400 rounded transition-colors" title="Logout"><LogOut size={14}/></button>
+          <button type="button" onClick={handleLogout} className="p-1.5 bg-zinc-900 border border-[#2b2b2b] text-gray-400 hover:text-red-400 rounded transition-colors" title="Logout"><LogOut size={14}/></button>
         </div>
       </aside>
 
       {/* VIEWPORT BODY */}
       <main className="flex-1 p-6 overflow-y-auto">
         {loading ? (
-          <div className="text-center py-24 text-sm font-mono text-gray-400 animate-pulse">Synchronizing application cluster connection with database cloud records...</div>
+          <div className="text-center py-24 text-sm font-mono text-gray-400 animate-pulse">Synchronizing database cloud records...</div>
         ) : (
           <>
-            {/* TAB CONTENT: POS REGISTER PANEL */}
+            {/* POS REGISTER PANEL */}
             {activeTab === 'pos' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -316,35 +310,35 @@ export default function LyftGymSystem() {
                   {posCart.length > 0 && (
                     <div className="border-t border-[#262626] pt-3 space-y-3">
                       <div className="flex justify-between text-sm"><span className="text-gray-400">Total Valuation</span><span className="font-bold font-mono text-white text-base">{formatMoney(posCart.reduce((acc, item) => acc + (item.product.price_gyd * item.quantity), 0))}</span></div>
-                      <button onClick={checkoutCart} className="w-full bg-red-600 text-white font-bold py-2.5 rounded text-sm hover:bg-red-500 transition-colors uppercase tracking-wider text-xs">
+                      <button type="button" onClick={checkoutCart} className="w-full bg-red-600 text-white font-bold py-2.5 rounded text-sm hover:bg-red-500 transition-colors uppercase tracking-wider text-xs">
                         Confirm Storage Take-Out
                       </button>
-                      <button onClick={() => setPosCart([])} className="w-full bg-zinc-900 border border-zinc-800 text-gray-400 font-semibold py-1.5 rounded text-xs hover:text-white transition-colors">Clear Selection</button>
+                      <button type="button" onClick={() => setPosCart([])} className="w-full bg-zinc-900 border border-zinc-800 text-gray-400 font-semibold py-1.5 rounded text-xs hover:text-white transition-colors">Clear Selection</button>
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {/* TAB CONTENT: INVENTORY & LOGS PANEL */}
+            {/* INVENTORY & LOGS PANEL */}
             {activeTab === 'inventory' && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                  {/* INVENTORY ITEM CREATION / INGESTION INTERFACE */}
+                  {/* INVENTORY ITEM CREATION */}
                   <div className="bg-[#161616] border border-[#262626] p-5 rounded-xl h-fit">
                     <h3 className="font-bold text-white mb-3 text-sm uppercase tracking-wider text-gray-400 flex items-center gap-2"><Plus size={16} className="text-red-500" /> Add New Product Profile</h3>
                     <form onSubmit={handleAddInventoryItem} className="space-y-3">
-                      <div><label className="text-xs text-gray-400 block mb-1">Product Display Name</label><input type="text" value={newInvName} onChange={e=>setNewInvName(e.target.value)} placeholder="e.g. Rule 1 Whey Protein 5lbs" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600" required /></div>
-                      <div><label className="text-xs text-gray-400 block mb-1">SKU Unique Serial Identifier</label><input type="text" value={newInvSku} onChange={e=>setNewInvSku(e.target.value)} placeholder="e.g. R1-WHEY-BLU" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600 font-mono" required /></div>
+                      <div><label className="text-xs text-gray-400 block mb-1">Product Display Name</label><input type="text" value={newInvName} onChange={e=>setNewInvName(e.target.value)} placeholder="e.g. Protein Powder" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600" required /></div>
+                      <div><label className="text-xs text-gray-400 block mb-1">SKU Unique Serial Identifier</label><input type="text" value={newInvSku} onChange={e=>setNewInvSku(e.target.value)} placeholder="e.g. WHEY-01" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600 font-mono" required /></div>
                       <div className="grid grid-cols-2 gap-2">
-                        <div><label className="text-xs text-gray-400 block mb-1">Starting Stock Volume</label><input type="number" min="0" value={newInvStock} onChange={e=>setNewInvStock(e.target.value)} placeholder="0" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600" required /></div>
-                        <div><label className="text-xs text-gray-400 block mb-1">Unit Selling Price (GYD)</label><input type="number" min="0" value={newInvPrice} onChange={e=>setNewInvPrice(e.target.value)} placeholder="15000" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600" required /></div>
+                        <div><label className="text-xs text-gray-400 block mb-1">Starting Stock</label><input type="number" min="0" value={newInvStock} onChange={e=>setNewInvStock(e.target.value)} placeholder="0" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600" required /></div>
+                        <div><label className="text-xs text-gray-400 block mb-1">Unit Price (GYD)</label><input type="number" min="0" value={newInvPrice} onChange={e=>setNewInvPrice(e.target.value)} placeholder="15000" className="w-full bg-[#1F1F1F] border border-[#333] p-2 rounded text-sm text-white outline-none focus:border-red-600" required /></div>
                       </div>
                       <button type="submit" className="w-full bg-red-600 text-white py-2 rounded font-bold text-xs tracking-wider uppercase mt-2 hover:bg-red-500 transition-colors">Publish Asset to Database</button>
                     </form>
                   </div>
 
-                  {/* CURRENT STOCK TABLE MATRIX DISPLAY */}
+                  {/* STOCK MATRIX TABLE */}
                   <div className="xl:col-span-2 bg-[#161616] border border-[#262626] rounded-xl overflow-hidden flex flex-col justify-between">
                     <div>
                       <div className="p-4 bg-[#121212] border-b border-[#262626] font-bold text-xs uppercase tracking-wider text-gray-400">Current Storage On-Hand Matrix</div>
@@ -378,7 +372,7 @@ export default function LyftGymSystem() {
                   </div>
                 </div>
 
-                {/* HISTORICAL REMOVAL AND AUDIT TRACKING LOGS SECTION */}
+                {/* HISTORICAL REMOVAL LOGS */}
                 <div className="bg-[#161616] border border-[#262626] rounded-xl overflow-hidden shadow-xl">
                   <div className="p-4 bg-[#121212] border-b border-[#262626] flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-gray-400">
                     <History size={14} className="text-red-500"/> Real-time Operational Removal & Auditing History Log
@@ -421,7 +415,7 @@ export default function LyftGymSystem() {
               </div>
             )}
 
-            {/* TAB CONTENT: SECURITY ARCHITECTURE PANEL */}
+            {/* SECURITY ARCHITECTURE PANEL */}
             {activeTab === 'security' && (
               <div className="max-w-md mx-auto bg-[#161616] border border-[#262626] p-6 rounded-xl shadow-xl">
                 {!securityGateUnlocked ? (
