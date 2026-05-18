@@ -38,6 +38,9 @@ export default function LyftGymSystemMaster() {
   const [members, setMembers] = useState<Member[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
 
+  // Real-Time Search Filter State
+  const [memberSearch, setMemberSearch] = useState('');
+
   // Registration Form States
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<'Regular' | 'VIP'>('Regular');
@@ -107,12 +110,20 @@ export default function LyftGymSystemMaster() {
     }
   }, [selectedBranch, isLoggedIn]);
 
-  // DIAGNOSTIC FAST-FIX INJECTION: Member Registration
+  // Client-Side Performance Filtering Engine
+  const filteredMembers = members.filter(m => {
+    const searchLower = memberSearch.toLowerCase();
+    return (
+      (m.name || '').toLowerCase().includes(searchLower) ||
+      (m.card_number || '').toLowerCase().includes(searchLower) ||
+      (m.phone_number || '').toLowerCase().includes(searchLower)
+    );
+  });
+
+  // Member Registration Handler
   const handleRegisterMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newCard) return alert('Data missing: Name and Card Number are required.');
-    
-    console.log('Sending member profile packet to Supabase...', { name: newName, card: newCard, branch: selectedBranch });
     
     const { error } = await supabase.from('members').insert([{
       name: newName, membership_type: newType, card_number: newCard,
@@ -120,63 +131,55 @@ export default function LyftGymSystemMaster() {
     }]);
     
     if (error) {
-      alert(`⚠️ DATABASE ERROR REGISTERING MEMBER:\n\nMessage: ${error.message}\nCode: ${error.code}\nHint: ${error.hint || 'Check if table structure/types match perfectly or if RLS is enabled.'}`);
-      console.error('Supabase Error Details:', error);
+      alert(`⚠️ DATABASE ERROR:\n\nMessage: ${error.message}`);
     } else {
-      alert('🎉 Member successfully added to the database!');
+      alert('🎉 Member successfully added!');
       setNewName(''); setNewCard(''); setNewPhone(''); setNewExpiry('');
       setActiveTab('members'); 
       refreshCoreDatabaseData();
     }
   };
 
-  // DIAGNOSTIC FAST-FIX INJECTION: Inventory Asset Addition
+  // Inventory Asset Addition Handler
   const handleRegisterInventory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invName) return alert('Item name is required.');
     
-    console.log('Sending asset allocation packet to Supabase...', { item: invName, quantity: invStock, price: invPrice, branch: selectedBranch });
-
     const { error } = await supabase.from('inventory').insert([{
       item_name: invName, category: invCategory, stock_count: Number(invStock),
       unit_price: Number(invPrice), branch_location: selectedBranch
     }]);
     
     if (error) {
-      alert(`⚠️ DATABASE ERROR ADDING INVENTORY ASSET:\n\nMessage: ${error.message}\nCode: ${error.code}\nHint: ${error.hint || 'Check if your inventory table columns are strictly lowercase or if RLS is blocked.'}`);
-      console.error('Supabase Error Details:', error);
+      alert(`⚠️ DATABASE ERROR:\n\nMessage: ${error.message}`);
     } else {
-      alert('🎉 Asset successfully updated in the live inventory ledger!');
+      alert('🎉 Asset successfully updated!');
       setInvName(''); setInvStock(50); setInvPrice(1500);
       refreshCoreDatabaseData();
     }
   };
 
-  // Inline Modifications for Data Tables
+  // Inline modifications
   const updateMemberRow = async (id: string, updatedField: Partial<Member>) => {
     const { error } = await supabase.from('members').update(updatedField).eq('id', id);
-    if (error) {
-      alert('Real-time sync failed: ' + error.message);
-    } else {
+    if (!error) {
       setMembers(members.map(m => m.id === id ? { ...m, ...updatedField } : m));
     }
   };
 
   const updateInventoryRow = async (id: string, updatedField: Partial<InventoryItem>) => {
     const { error } = await supabase.from('inventory').update(updatedField).eq('id', id);
-    if (error) {
-      alert('Real-time sync failed: ' + error.message);
-    } else {
+    if (!error) {
       setInventory(inventory.map(i => i.id === id ? { ...i, ...updatedField } : i));
     }
   };
 
-  // POS Operational Controls
+  // POS Controls
   const addToCart = (item: InventoryItem) => {
-    if (item.stock_count <= 0) return alert('Item is out of stock!');
+    if (item.stock_count <= 0) return alert('Item out of stock!');
     const existing = posCart.find(c => c.item.id === item.id);
     if (existing) {
-      if (existing.quantity >= item.stock_count) return alert('Cannot exceed total available stock.');
+      if (existing.quantity >= item.stock_count) return alert('Cannot exceed stock.');
       setPosCart(posCart.map(c => c.item.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
     } else {
       setPosCart([...posCart, { item, quantity: 1 }]);
@@ -192,14 +195,11 @@ export default function LyftGymSystemMaster() {
 
   const processSaleCheckout = async () => {
     if (posCart.length === 0) return;
-    
-    // Deduct stock levels in Supabase
     for (const entry of posCart) {
       const updatedStock = entry.item.stock_count - entry.quantity;
       await supabase.from('inventory').update({ stock_count: updatedStock }).eq('id', entry.item.id);
     }
-
-    alert('Transaction finalized and stock levels updated.');
+    alert('Transaction finalized.');
     setPosCart([]);
     setCashReceived('');
     refreshCoreDatabaseData();
@@ -248,7 +248,7 @@ export default function LyftGymSystemMaster() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">
-      {/* Top Navigation Frame */}
+      {/* Top Header Ribbon */}
       <header className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-2">
           <span className="text-red-600 font-black text-2xl tracking-tighter">LYFT</span>
@@ -257,7 +257,7 @@ export default function LyftGymSystemMaster() {
         
         <div className="flex items-center gap-2">
           <label className="text-xs uppercase tracking-wider text-zinc-400 font-bold">Active Branch Node:</label>
-          <select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)} className="bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-1.5 focus:border-red-600 font-medium text-sm">
+          <select value={selectedBranch} onChange={(e) => { setSelectedBranch(e.target.value); setMemberSearch(''); }} className="bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-1.5 focus:border-red-600 font-medium text-sm">
             <option value="Sheriff Street">Sheriff Street</option>
             <option value="Tower">Tower</option>
             <option value="Skeldon">Skeldon</option>
@@ -270,15 +270,15 @@ export default function LyftGymSystemMaster() {
       </header>
 
       <div className="flex flex-1 flex-col md:flex-row">
-        {/* Navigation Sidebar Drawer */}
+        {/* Navigation Sidebar */}
         <nav className="w-full md:w-64 bg-zinc-900/50 border-r border-zinc-800 p-4 space-y-1">
           <button onClick={() => setActiveTab('members')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'members' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>👥 Members Directory</button>
           <button onClick={() => setActiveTab('register')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'register' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📝 Account Registration</button>
-          <button onClick={() => setActiveTab('pos')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'pos' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>🛒 POS Sales Register</button>
+          <button onClick={() => setActiveTab('pos')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'pos' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>🛒 Front-Desk POS</button>
           <button onClick={() => setActiveTab('inventory')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'inventory' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📦 Inventory Logistics</button>
-          <button onClick={() => setActiveTab('analytics')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'analytics' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📈 Analytics & Charts</button>
+          <button onClick={() => setActiveTab('analytics')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'analytics' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📈 Analytics Overview</button>
           
-          {/* Integrated Workspace Calculator */}
+          {/* Workspace Calculator */}
           <div className="pt-6">
             <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-lg space-y-2">
               <div className="bg-zinc-900 border border-zinc-800 text-right p-2 rounded text-base font-mono truncate text-emerald-400">{calcDisplay}</div>
@@ -293,20 +293,32 @@ export default function LyftGymSystemMaster() {
           </div>
         </nav>
 
-        {/* Workspace Display Frame */}
+        {/* Main Workspace display */}
         <main className="flex-1 p-6 md:p-8 overflow-y-auto">
 
-          {/* TAB 1: MEMBERS DATABASE */}
+          {/* TAB 1: MEMBERS DATABASE WITH HIGH-PERFORMANCE SEARCH INJECTION */}
           {activeTab === 'members' && (
             <div className="space-y-4">
-              <div>
-                <h1 className="text-xl font-bold">{selectedBranch} Branch Roster</h1>
-                <p className="text-xs text-zinc-400">Inline real-time updates connected directly to your cloud data node.</p>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-900/40 p-4 border border-zinc-800/80 rounded-xl">
+                <div>
+                  <h1 className="text-xl font-bold">{selectedBranch} Roster ({filteredMembers.length} found)</h1>
+                  <p className="text-xs text-zinc-400">Total accounts loaded in branch node: {members.length}</p>
+                </div>
+                <div className="w-full sm:w-80">
+                  <input 
+                    type="text" 
+                    placeholder="🔍 Filter by name, phone number, or card string..." 
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-red-600 placeholder-zinc-500 transition font-medium"
+                  />
+                </div>
               </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden max-h-[650px] overflow-y-auto">
                 <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-zinc-950 border-b border-zinc-800 text-xs font-bold uppercase text-zinc-400">
+                  <thead className="sticky top-0 bg-zinc-950 z-10 border-b border-zinc-800 text-xs font-bold uppercase text-zinc-400">
+                    <tr>
                       <th className="p-4">Name</th>
                       <th className="p-4">Tier Status</th>
                       <th className="p-4">Card String</th>
@@ -315,12 +327,12 @@ export default function LyftGymSystemMaster() {
                     </tr>
                   </thead>
                   <tbody className="text-xs divide-y divide-zinc-800">
-                    {members.length === 0 ? (
+                    {filteredMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="text-center py-6 text-zinc-500 italic">No members registered under the {selectedBranch} node yet.</td>
+                        <td colSpan={5} className="text-center py-8 text-zinc-500 italic">No corresponding member logs found matching your filters.</td>
                       </tr>
                     ) : (
-                      members.map(m => (
+                      filteredMembers.map(m => (
                         <tr key={m.id} className="hover:bg-zinc-800/20">
                           <td className="p-3"><input type="text" defaultValue={m.name} onBlur={(e) => updateMemberRow(m.id, { name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none" /></td>
                           <td className="p-3">
@@ -341,7 +353,7 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 2: MEMBER REGISTRATION */}
+          {/* TAB 2: REGISTER PROFILE */}
           {activeTab === 'register' && (
             <form onSubmit={handleRegisterMember} className="max-w-xl bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
               <h2 className="text-lg font-bold">Profile Creation Asset: {selectedBranch}</h2>
@@ -372,15 +384,15 @@ export default function LyftGymSystemMaster() {
                 <label className="block text-xs text-zinc-400 mb-1">Contract Term Expiration</label>
                 <input type="date" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none" />
               </div>
-              <button type="submit" className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-xs font-bold uppercase tracking-wide">Commit to {selectedBranch} Data File</button>
+              <button type="submit" className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-xs font-bold uppercase tracking-wide">Commit Member</button>
             </form>
           )}
 
-          {/* TAB 3: POINT OF SALE TERMINAL REGISTER */}
+          {/* TAB 3: POS FRONT REGISTER */}
           {activeTab === 'pos' && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               <div className="xl:col-span-2 space-y-4">
-                <h1 className="text-xl font-bold">{selectedBranch} Front-Desk Register</h1>
+                <h1 className="text-xl font-bold">{selectedBranch} Front Register</h1>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {inventory.map(item => (
                     <button key={item.id} onClick={() => addToCart(item)} className="bg-zinc-900 hover:bg-zinc-800/80 border border-zinc-800 p-4 rounded-xl text-left transition flex flex-col justify-between h-28 group relative overflow-hidden">
@@ -397,7 +409,7 @@ export default function LyftGymSystemMaster() {
                 </div>
               </div>
               
-              {/* POS Cart Checkout Drawer */}
+              {/* POS Cart Summary */}
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col justify-between shadow-xl h-[500px]">
                 <div>
                   <h2 className="text-sm uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2 mb-3">Active Terminal Checkout</h2>
@@ -414,7 +426,7 @@ export default function LyftGymSystemMaster() {
                   </div>
                 </div>
                 
-                {/* Billing Summary Segment */}
+                {/* Calculations */}
                 <div className="border-t border-zinc-800 pt-3 space-y-2 font-mono text-xs">
                   <div className="flex justify-between text-zinc-400"><span>Subtotal:</span><span>${calculateCartTotals().subtotal.toLocaleString()}</span></div>
                   <div className="flex justify-between text-zinc-400"><span>VAT (14%):</span><span>${calculateCartTotals().tax.toLocaleString()}</span></div>
@@ -424,9 +436,9 @@ export default function LyftGymSystemMaster() {
                     <input type="number" value={cashReceived} onChange={(e) => setCashReceived(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-right font-mono text-emerald-400 focus:outline-none" placeholder="$0" />
                   </div>
                   {Number(cashReceived) >= calculateCartTotals().total && (
-                    <div className="flex justify-between text-emerald-400 font-bold py-1 bg-emerald-950/20 px-2 rounded border border-emerald-900/30"><span>Change Returned:</span><span>${(Number(cashReceived) - calculateCartTotals().total).toLocaleString()}</span></div>
+                    <div className="flex justify-between text-emerald-400 font-bold py-1 bg-emerald-950/20 px-2 rounded border border-emerald-900/30"><span>Change:</span><span>${(Number(cashReceived) - calculateCartTotals().total).toLocaleString()}</span></div>
                   )}
-                  <button onClick={processSaleCheckout} disabled={posCart.length === 0} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-800 text-white py-2.5 rounded font-bold uppercase text-xs tracking-wider transition">Process Change File</button>
+                  <button onClick={processSaleCheckout} disabled={posCart.length === 0} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-800 text-white py-2.5 rounded font-bold uppercase text-xs tracking-wider transition">Process Checkout</button>
                 </div>
               </div>
             </div>
@@ -488,22 +500,20 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 5: ANALYTICS & REVENUE CHARTS */}
+          {/* TAB 5: ANALYTICS */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
               <div>
-                <h1 className="text-xl font-bold">{selectedBranch} Analytics Segment</h1>
+                <h1 className="text-xl font-bold">{selectedBranch} Analytics</h1>
                 <p className="text-xs text-zinc-400">Operational distribution indexes across the branch infrastructure.</p>
               </div>
 
-              {/* Statistical Value Blocks */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Branch Profiles</span><div className="text-2xl font-black text-red-500 mt-1">{members.length} Accounts</div></div>
                 <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">SKUs Registered</span><div className="text-2xl font-black text-zinc-100 mt-1">{inventory.length} Stock Units</div></div>
-                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Projected Flow Value</span><div className="text-2xl font-black text-emerald-400 mt-1">${(inventory.reduce((sum, i) => sum + (i.stock_count * i.unit_price), 0) + (members.length * 15000)).toLocaleString()}</div></div>
+                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Projected Value Flow</span><div className="text-2xl font-black text-emerald-400 mt-1">${(inventory.reduce((sum, i) => sum + (i.stock_count * i.unit_price), 0) + (members.length * 15000)).toLocaleString()}</div></div>
               </div>
 
-              {/* Native Bar Chart Frame */}
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl">
                 <h3 className="text-xs uppercase tracking-widest text-zinc-400 font-bold mb-6">Financial Cycle Breakdown ({selectedBranch})</h3>
                 <div className="h-48 flex items-end justify-between gap-4 pt-4 border-b border-zinc-800 border-l px-4">
