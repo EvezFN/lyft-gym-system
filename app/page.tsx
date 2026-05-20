@@ -519,7 +519,7 @@ export default function LyftGymSystemMaster() {
                     <select value={newAssignedTrainer} onChange={(e) => setNewAssignedTrainer(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-emerald-400 font-medium focus:outline-none focus:border-red-600">
                       <option value="">No / Don't Need A Trainer</option>
                       {trainers.map(t => (
-                        <option key={t.id} value={t.name}>Yes -> Assign to {t.name}</option>
+                        <option key={t.id} value={t.name}>Yes {'->'} Assign to {t.name}</option>
                       ))}
                     </select>
                   </div>
