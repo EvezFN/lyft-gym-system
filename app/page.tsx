@@ -134,7 +134,6 @@ export default function LyftGymSystemMaster() {
         { id: 't2', name: 'Brian Addamas', specialty: 'Bodybuilding & Nutrition Coach', phone_number: '592-611-3344', branch_location: selectedBranch }
       ]);
     } else if (trainData) {
-      // If table exists but is empty, pre-populate default trainers automatically
       if (trainData.length === 0) {
         setTrainers([
           { id: 't1', name: 'Ravin Mahabal', specialty: 'Elite Strength Specialist', phone_number: '592-600-1122', branch_location: selectedBranch },
@@ -182,7 +181,7 @@ export default function LyftGymSystemMaster() {
     }]);
     
     if (error) {
-      alert(`⚠️ SUPABASE CONFIGURATION NOTICE:\n\nMessage: ${error.message}\n\nHint: If you see a column missing error, make sure to add 'email', 'address', 'goal', and 'assigned_trainer' columns to your 'members' table in the Supabase Dashboard.`);
+      alert(`⚠️ SUPABASE CONFIGURATION NOTICE:\n\nMessage: ${error.message}`);
       console.error(error);
     } else {
       alert('🎉 Member successfully added with trainer status alignment!');
@@ -206,7 +205,6 @@ export default function LyftGymSystemMaster() {
     }]);
 
     if (error) {
-      // Local addition fallback if database schema is not built yet
       const fallbackTrainer: Trainer = {
         id: 'temp-' + Date.now(),
         name: trainerName,
@@ -215,7 +213,7 @@ export default function LyftGymSystemMaster() {
         branch_location: selectedBranch
       };
       setTrainers([...trainers, fallbackTrainer]);
-      alert(`ℹ️ Trainer saved locally!\nTo save permanently, create a table named 'trainers' in Supabase with columns: name, specialty, phone_number, branch_location.`);
+      alert(`ℹ️ Trainer saved locally!`);
     } else {
       alert('🎉 New Trainer successfully added to cloud infrastructure!');
       refreshCoreDatabaseData();
@@ -255,15 +253,29 @@ export default function LyftGymSystemMaster() {
     const { error } = await supabase.from('inventory').update(updatedField).eq('id', id);
     if (!error) {
       setInventory(inventory.map(i => i.id === id ? { ...i, ...updatedField } : i));
+    } else {
+      alert(`Failed to update item: ${error.message}`);
+    }
+  };
+
+  // Inventory Deletion Logic
+  const deleteInventoryItem = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to completely delete "${name}" from inventory logs?`)) return;
+    
+    const { error } = await supabase.from('inventory').delete().eq('id', id);
+    if (!error) {
+      alert('Asset deleted successfully.');
+      setInventory(inventory.filter(i => i.id !== id));
+      // Reset POS cart if it contained the deleted item
+      setPosCart(posCart.filter(c => c.item.id !== id));
+    } else {
+      alert(`Error processing deletion: ${error.message}`);
     }
   };
 
   const updateTrainerRow = async (id: string, updatedField: Partial<Trainer>) => {
     const { error } = await supabase.from('trainers').update(updatedField).eq('id', id);
     setTrainers(trainers.map(t => t.id === id ? { ...t, ...updatedField } : t));
-    if (error) {
-      console.warn('Cloud sync unavailable for trainer edit - row changed in local sandbox environment.');
-    }
   };
 
   // POS Controls
@@ -389,7 +401,7 @@ export default function LyftGymSystemMaster() {
         {/* Main Workspace display */}
         <main className="flex-1 p-6 md:p-8 overflow-y-auto">
 
-          {/* TAB 1: MEMBERS DATABASE WITH EXPANDED TRAINER COLUMNS */}
+          {/* TAB 1: MEMBERS DATABASE */}
           {activeTab === 'members' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-900/40 p-4 border border-zinc-800/80 rounded-xl">
@@ -465,7 +477,7 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 2: REGISTER PROFILE WITH TRAINER MATRIX QUESTIONS */}
+          {/* TAB 2: REGISTER PROFILE */}
           {activeTab === 'register' && (
             <form onSubmit={handleRegisterMember} className="max-w-2xl bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 shadow-xl">
               <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">📝 Profile Creation Asset: <span className="text-red-500 font-mono text-sm">{selectedBranch}</span></h2>
@@ -650,17 +662,17 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 5: INVENTORY LOGISTICS */}
+          {/* TAB 5: INVENTORY LOGISTICS WITH FULL PRICE EDITING AND ITEM DELETION */}
           {activeTab === 'inventory' && (
             <div className="space-y-6">
               <form onSubmit={handleRegisterInventory} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
                 <div className="sm:col-span-2">
                   <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Item Title</label>
-                  <input type="text" value={invName} onChange={(e) => setInvName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none" placeholder="Protein Shake 500ml" required />
+                  <input type="text" value={invName} onChange={(e) => setInvName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-red-600" placeholder="Protein Shake 500ml" required />
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Category</label>
-                  <select value={invCategory} onChange={(e) => setInvCategory(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none">
+                  <select value={invCategory} onChange={(e) => setInvCategory(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-red-600">
                     <option value="Supplements">Supplements</option>
                     <option value="Beverages">Beverages</option>
                     <option value="Gear/Apparel">Gear/Apparel</option>
@@ -668,10 +680,10 @@ export default function LyftGymSystemMaster() {
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Initial Stock</label>
-                  <input type="number" value={invStock} onChange={(e) => setInvStock(Number(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none" />
+                  <input type="number" value={invStock} onChange={(e) => setInvStock(Number(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-red-600" />
                 </div>
                 <div>
-                  <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 rounded text-xs uppercase tracking-wide">Add Asset</button>
+                  <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 rounded text-xs uppercase tracking-wide transition">Add Asset</button>
                 </div>
               </form>
 
@@ -681,14 +693,15 @@ export default function LyftGymSystemMaster() {
                     <tr className="bg-zinc-950 border-b border-zinc-800 text-xs font-bold uppercase text-zinc-400">
                       <th className="p-4">Item Name</th>
                       <th className="p-4">Categorization</th>
-                      <th className="p-4">Units in Stock</th>
-                      <th className="p-4">Retail Unit Price</th>
+                      <th className="p-4 w-32">Units in Stock</th>
+                      <th className="p-4 w-36">Retail Unit Price ($)</th>
+                      <th className="p-4 w-24 text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs divide-y divide-zinc-800">
                     {inventory.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="text-center py-6 text-zinc-500 italic">No inventory tracked at {selectedBranch} yet.</td>
+                        <td colSpan={5} className="text-center py-6 text-zinc-500 italic">No inventory tracked at {selectedBranch} yet.</td>
                       </tr>
                     ) : (
                       inventory.map(i => (
@@ -696,7 +709,27 @@ export default function LyftGymSystemMaster() {
                           <td className="p-3"><input type="text" defaultValue={i.item_name} onBlur={(e) => updateInventoryRow(i.id, { item_name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none font-medium" /></td>
                           <td className="p-3 text-zinc-400">{i.category}</td>
                           <td className="p-3"><input type="number" defaultValue={i.stock_count} onBlur={(e) => updateInventoryRow(i.id, { stock_count: Number(e.target.value) })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-20 focus:outline-none font-mono" /></td>
-                          <td className="p-3"><input type="number" step="1" defaultValue={i.unit_price} onBlur={(e) => updateInventoryRow(i.id, { unit_price: Number(e.target.value) })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-24 focus:outline-none font-mono text-emerald-400 font-bold" /></td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1 bg-zinc-950/40 px-2 py-1 rounded border border-zinc-800 focus-within:border-red-600 max-w-[120px]">
+                              <span className="text-emerald-500 font-bold font-mono">$</span>
+                              <input 
+                                type="number" 
+                                step="any"
+                                defaultValue={i.unit_price} 
+                                onBlur={(e) => updateInventoryRow(i.id, { unit_price: Number(e.target.value) })} 
+                                className="bg-transparent w-full focus:outline-none font-mono text-emerald-400 font-bold text-xs" 
+                              />
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <button 
+                              onClick={() => deleteInventoryItem(i.id, i.item_name)}
+                              className="bg-red-950/40 hover:bg-red-600 hover:text-white border border-red-900/40 text-red-400 rounded p-1.5 px-2.5 font-bold transition text-[11px]"
+                              title="Delete Item"
+                            >
+                              ✕ Delete
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}
