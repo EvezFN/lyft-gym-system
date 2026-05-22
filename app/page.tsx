@@ -90,7 +90,6 @@ export default function LyftGymSystemMaster() {
 
   // POS Module States
   const [posCart, setPosCart] = useState<{ item: InventoryItem; quantity: number }[]>([]);
-  const [posTaxRate] = useState(0.14); // 14% Guyana VAT standard
   const [cashReceived, setCashReceived] = useState<string>('');
 
   // Inventory Registration Form States
@@ -139,7 +138,6 @@ export default function LyftGymSystemMaster() {
         return;
       }
 
-      // Safe defaults if columns aren't initialized yet
       const userPayload: AdminUser = {
         id: data.id,
         username: data.username,
@@ -152,7 +150,6 @@ export default function LyftGymSystemMaster() {
 
       setCurrentUser(userPayload);
       
-      // Auto assign first valid branch available to this user
       if (userPayload.access_all_locations) {
         setSelectedBranch('Sheriff Street');
       } else if (userPayload.allowed_branches.length > 0) {
@@ -218,13 +215,12 @@ export default function LyftGymSystemMaster() {
     setAdmPerms({ ...admPerms, [branch]: level });
   };
 
-  // Create Restricted / Universal Admin Account with Name and Role mapping fixed
+  // Create Restricted / Universal Admin Account
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!admUsername || !admPassword || !admName) return alert('Provide full name, username, and password');
     if (!admAccessAll && admBranches.length === 0) return alert('Select at least one allowed branch or choose Universal Access.');
 
-    // FIXED: role: 'admin' added to the insertion payload to resolve the NOT NULL constraint error.
     const { error } = await supabase.from('system_users').insert([{
       name: admName.trim(),
       username: admUsername.toLowerCase().trim(),
@@ -277,7 +273,6 @@ export default function LyftGymSystemMaster() {
       const dataUrl = canvas.toDataURL('image/jpeg');
       setCapturedPhoto(dataUrl);
       
-      // Stop webcam components
       videoStream.getTracks().forEach(track => track.stop());
       setVideoStream(null);
     }
@@ -361,7 +356,7 @@ export default function LyftGymSystemMaster() {
     }
   };
 
-  // Inline Row Synchronizations with view_edit guarding
+  // Inline Row Synchronizations
   const updateMemberRow = async (id: string, updatedField: Partial<Member>) => {
     if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
     const { error } = await supabase.from('members').update(updatedField).eq('id', id);
@@ -405,11 +400,10 @@ export default function LyftGymSystemMaster() {
     }
   };
 
+  // FIXED: Removed tax/VAT generation properties
   const calculateCartTotals = () => {
-    const subtotal = posCart.reduce((sum, c) => sum + (c.item.unit_price * c.quantity), 0);
-    const tax = subtotal * posTaxRate;
-    const total = subtotal + tax;
-    return { subtotal, tax, total };
+    const total = posCart.reduce((sum, c) => sum + (c.item.unit_price * c.quantity), 0);
+    return { total };
   };
 
   const processSaleCheckout = async () => {
@@ -480,7 +474,6 @@ export default function LyftGymSystemMaster() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans relative">
       
-      {/* Photo Modals for Verification Overview */}
       {previewPhotoModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4" onClick={() => setPreviewPhotoModal(null)}>
           <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-2xl max-w-sm w-full shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
@@ -498,7 +491,6 @@ export default function LyftGymSystemMaster() {
             <span className="text-red-600 font-black text-2xl tracking-tighter">LYFT</span>
             <span className="text-zinc-400 font-light text-xl">NETWORK</span>
           </div>
-          {/* Permission Status Indicator Badge */}
           <div className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${canEditCurrentBranch ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-400' : 'bg-amber-950/40 border-amber-800/60 text-amber-500'}`}>
             {canEditCurrentBranch ? '⚡ FULL EDITING GRANTED' : '⚠️ READ-ONLY CONSTRAINED'}
           </div>
@@ -529,7 +521,6 @@ export default function LyftGymSystemMaster() {
           <button onClick={() => setActiveTab('inventory')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'inventory' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📦 Inventory Logistics</button>
           <button onClick={() => setActiveTab('analytics')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'analytics' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📈 Analytics Overview</button>
           
-          {/* Super Admin Privileged Access Controls */}
           {currentUser?.access_all_locations && (
             <button onClick={() => setActiveTab('admin_mgmt')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-bold transition border border-zinc-800 ${activeTab === 'admin_mgmt' ? 'bg-zinc-100 text-zinc-950 font-black' : 'text-red-400 hover:bg-zinc-800'}`}>🔐 Admin Management</button>
           )}
@@ -840,9 +831,8 @@ export default function LyftGymSystemMaster() {
                   </div>
                 </div>
                 
+                {/* FIXED: Removed subtotal and VAT fields layout summary row blocks */}
                 <div className="border-t border-zinc-800 pt-3 space-y-2 font-mono text-xs">
-                  <div className="flex justify-between text-zinc-400"><span>Subtotal:</span><span>${calculateCartTotals().subtotal.toLocaleString()}</span></div>
-                  <div className="flex justify-between text-zinc-400"><span>VAT (14%):</span><span>${calculateCartTotals().tax.toLocaleString()}</span></div>
                   <div className="flex justify-between border-b border-zinc-800 pb-2 text-sm text-zinc-100 font-bold"><span>Total Due:</span><span className="text-emerald-400">${calculateCartTotals().total.toLocaleString()}</span></div>
                   <div>
                     <label className="block text-[10px] uppercase text-zinc-500 mb-1 font-bold">Cash Tended</label>
@@ -934,7 +924,6 @@ export default function LyftGymSystemMaster() {
           {activeTab === 'admin_mgmt' && currentUser?.access_all_locations && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
               
-              {/* Form to provision new admins */}
               <form onSubmit={handleCreateAdmin} className="lg:col-span-1 bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4 shadow-xl">
                 <div>
                   <h2 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">🔐 Provision Admin Credential</h2>
@@ -961,7 +950,6 @@ export default function LyftGymSystemMaster() {
                   <label htmlFor="admAccessAll" className="text-xs font-bold text-red-400 cursor-pointer select-none">Universal Admin (All Locations + Edit Access)</label>
                 </div>
 
-                {/* Granular Per-Branch Authorization Matrix Settings */}
                 {!admAccessAll && (
                   <div className="space-y-2 border-t border-zinc-800 pt-3">
                     <label className="block text-xs text-zinc-400 font-bold uppercase tracking-wider mb-2">Location Node Permissions</label>
@@ -994,7 +982,6 @@ export default function LyftGymSystemMaster() {
                 <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wide transition">Provision Admin Profile</button>
               </form>
 
-              {/* Roster of active system admins */}
               <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-xl">
                 <div className="p-4 bg-zinc-950 border-b border-zinc-800">
                   <h3 className="text-xs uppercase tracking-widest text-zinc-400 font-bold">Active System Admins Registry</h3>
