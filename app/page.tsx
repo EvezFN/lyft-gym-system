@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './utils/supabase';
 
-// Expanded Data Typing Models
+// Data Typing Models
 interface Member {
   id: string;
   name: string;
@@ -16,6 +16,7 @@ interface Member {
   address: string;
   goal: string;
   assigned_trainer: string;
+  photo?: string; // Stored as high-fidelity Base64 URI string
 }
 
 interface InventoryItem {
@@ -35,21 +36,33 @@ interface Trainer {
   branch_location: string;
 }
 
+interface AdminUser {
+  id: string;
+  username: string;
+  password?: string;
+  access_all_locations: boolean;
+  allowed_branches: string[];
+  branch_permissions: Record<string, 'view_only' | 'view_edit'>;
+}
+
 export default function LyftGymSystemMaster() {
   // Navigation & Authentication
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [activeTab, setActiveTab] = useState<'members' | 'register' | 'pos' | 'inventory' | 'trainers' | 'analytics'>('members');
+  const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
+  const [activeTab, setActiveTab] = useState<'members' | 'register' | 'pos' | 'inventory' | 'trainers' | 'analytics' | 'admin_mgmt'>('members');
   
-  // Guyana Branch System Selection Configurations
+  // Guyana Branch System Configuration Selection Index
+  const allBranches = ['Sheriff Street', 'Main Street', 'Tower', 'Skeldon', 'Diamond', 'Canje', 'Mahaica', 'Vreed en Hoop'];
   const [selectedBranch, setSelectedBranch] = useState('Sheriff Street');
 
   // Core Data Arrays
   const [members, setMembers] = useState<Member[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
+  const [systemAdmins, setSystemAdmins] = useState<AdminUser[]>([]);
 
   // Real-Time Search Filter State
   const [memberSearch, setMemberSearch] = useState('');
@@ -64,6 +77,10 @@ export default function LyftGymSystemMaster() {
   const [newAddress, setNewAddress] = useState('');
   const [newGoal, setNewGoal] = useState('');
   const [newAssignedTrainer, setNewAssignedTrainer] = useState('');
+  
+  // Mandatory Photo Capture States
+  const [capturedPhoto, setCapturedPhoto] = useState<string>('');
+  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
 
   // Trainer Registration Form States
   const [trainerName, setTrainerName] = useState('');
@@ -81,12 +98,30 @@ export default function LyftGymSystemMaster() {
   const [invStock, setInvStock] = useState<number>(50);
   const [invPrice, setInvPrice] = useState<number>(1500); 
 
+  // New Admin User Registration Configuration States
+  const [admUsername, setAdmUsername] = useState('');
+  const [admPassword, setAdmPassword] = useState('');
+  const [admAccessAll, setAdmAccessAll] = useState(false);
+  const [admBranches, setAdmBranches] = useState<string[]>([]);
+  const [admPerms, setAdmPerms] = useState<Record<string, 'view_only' | 'view_edit'>>({});
+
   // Digital Calculator Component States
   const [calcDisplay, setCalcDisplay] = useState('0');
   const [calcMemory, setCalcMemory] = useState<string | null>(null);
   const [calcOp, setCalcOp] = useState<string | null>(null);
 
-  // Handle Login Authentication
+  // Enlarged Photo Viewer Modal State
+  const [previewPhotoModal, setPreviewPhotoModal] = useState<string | null>(null);
+
+  // Compute Dynamic Operational Access matrix for current user on active branch
+  const canEditCurrentBranch = currentUser?.access_all_locations || 
+    (currentUser?.branch_permissions?.[selectedBranch] === 'view_edit');
+
+  const allowedBranchesToSelect = currentUser?.access_all_locations 
+    ? allBranches 
+    : (currentUser?.allowed_branches || []);
+
+  // Handle Login Authentication with Permission Matrix Loadouts
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -101,6 +136,25 @@ export default function LyftGymSystemMaster() {
         setLoginError('Invalid application username or security access key.');
         return;
       }
+
+      // Safe defaults if columns aren't initialized yet
+      const userPayload: AdminUser = {
+        id: data.id,
+        username: data.username,
+        access_all_locations: data.access_all_locations ?? (data.username === 'admin'),
+        allowed_branches: data.allowed_branches || ['Sheriff Street'],
+        branch_permissions: data.branch_permissions || { 'Sheriff Street': 'view_edit' }
+      };
+
+      setCurrentUser(userPayload);
+      
+      // Auto assign first valid branch available to this user
+      if (userPayload.access_all_locations) {
+        setSelectedBranch('Sheriff Street');
+      } else if (userPayload.allowed_branches.length > 0) {
+        setSelectedBranch(userPayload.allowed_branches[0]);
+      }
+
       setIsLoggedIn(true);
     } catch (err) {
       setLoginError('Database authentication link failed.');
@@ -109,39 +163,31 @@ export default function LyftGymSystemMaster() {
 
   // Synchronized Data Fetching
   const refreshCoreDatabaseData = async () => {
+    if (!selectedBranch) return;
+
     // 1. Fetch Members
-    const { data: memData, error: memError } = await supabase.from('members').select('*').eq('branch_location', selectedBranch);
-    if (memError) {
-      console.error('Error reading members table:', memError);
-    } else if (memData) {
-      setMembers(memData);
-    }
+    const { data: memData } = await supabase.from('members').select('*').eq('branch_location', selectedBranch);
+    if (memData) setMembers(memData);
 
     // 2. Fetch Inventory Items
-    const { data: invData, error: invError } = await supabase.from('inventory').select('*').eq('branch_location', selectedBranch);
-    if (invError) {
-      console.error('Error reading inventory table:', invError);
-    } else if (invData) {
-      setInventory(invData);
-    }
+    const { data: invData } = await supabase.from('inventory').select('*').eq('branch_location', selectedBranch);
+    if (invData) setInventory(invData);
 
-    // 3. Fetch Trainers with Safe Application Fallbacks
-    const { data: trainData, error: trainError } = await supabase.from('trainers').select('*').eq('branch_location', selectedBranch);
-    if (trainError) {
-      console.warn('Trainers table not synced yet. Applying system default personnel.');
+    // 3. Fetch Trainers
+    const { data: trainData } = await supabase.from('trainers').select('*').eq('branch_location', selectedBranch);
+    if (trainData && trainData.length > 0) {
+      setTrainers(trainData);
+    } else {
       setTrainers([
         { id: 't1', name: 'Ravin Mahabal', specialty: 'Elite Strength Specialist', phone_number: '592-600-1122', branch_location: selectedBranch },
         { id: 't2', name: 'Brian Addamas', specialty: 'Bodybuilding & Nutrition Coach', phone_number: '592-611-3344', branch_location: selectedBranch }
       ]);
-    } else if (trainData) {
-      if (trainData.length === 0) {
-        setTrainers([
-          { id: 't1', name: 'Ravin Mahabal', specialty: 'Elite Strength Specialist', phone_number: '592-600-1122', branch_location: selectedBranch },
-          { id: 't2', name: 'Brian Addamas', specialty: 'Bodybuilding & Nutrition Coach', phone_number: '592-611-3344', branch_location: selectedBranch }
-        ]);
-      } else {
-        setTrainers(trainData);
-      }
+    }
+
+    // 4. If Super Admin, fetch all admin configurations
+    if (currentUser?.access_all_locations) {
+      const { data: admData } = await supabase.from('system_users').select('id, username, access_all_locations, allowed_branches, branch_permissions');
+      if (admData) setSystemAdmins(admData);
     }
   };
 
@@ -151,21 +197,100 @@ export default function LyftGymSystemMaster() {
     }
   }, [selectedBranch, isLoggedIn]);
 
-  // Client-Side Performance Filtering Engine
-  const filteredMembers = members.filter(m => {
-    const searchLower = memberSearch.toLowerCase();
-    return (
-      (m.name || '').toLowerCase().includes(searchLower) ||
-      (m.card_number || '').toLowerCase().includes(searchLower) ||
-      (m.phone_number || '').toLowerCase().includes(searchLower) ||
-      (m.assigned_trainer || '').toLowerCase().includes(searchLower)
-    );
-  });
+  // Handle branch checklist changes for creating new admins
+  const toggleAdmBranch = (branch: string) => {
+    if (admBranches.includes(branch)) {
+      setAdmBranches(admBranches.filter(b => b !== branch));
+      const updatedPerms = { ...admPerms };
+      delete updatedPerms[branch];
+      setAdmPerms(updatedPerms);
+    } else {
+      setAdmBranches([...admBranches, branch]);
+      setAdmPerms({ ...admPerms, [branch]: 'view_only' });
+    }
+  };
 
-  // Extended Member Registration Handler with Diagnostic Alerts
+  const setAdmBranchPermLevel = (branch: string, level: 'view_only' | 'view_edit') => {
+    setAdmPerms({ ...admPerms, [branch]: level });
+  };
+
+  // Create Restricted / Universal Admin Account
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!admUsername || !admPassword) return alert('Provide username and password');
+    if (!admAccessAll && admBranches.length === 0) return alert('Select at least one allowed branch or choose Universal Access.');
+
+    const { error } = await supabase.from('system_users').insert([{
+      username: admUsername.toLowerCase().trim(),
+      password: admPassword,
+      access_all_locations: admAccessAll,
+      allowed_branches: admAccessAll ? allBranches : admBranches,
+      branch_permissions: admAccessAll 
+        ? allBranches.reduce((acc, b) => ({ ...acc, [b]: 'view_edit' }), {}) 
+        : admPerms
+    }]);
+
+    if (error) {
+      alert(`Error creating admin user: ${error.message}`);
+    } else {
+      alert('🎉 New Admin Profile safely registered into matrix system logs!');
+      setAdmUsername('');
+      setAdmPassword('');
+      setAdmAccessAll(false);
+      setAdmBranches([]);
+      setAdmPerms({});
+      refreshCoreDatabaseData();
+    }
+  };
+
+  // Multimedia Webcam Handlers
+  const startCameraInput = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+      setVideoStream(stream);
+      setTimeout(() => {
+        const videoEl = document.getElementById('webcam-feed') as HTMLVideoElement;
+        if (videoEl) videoEl.srcObject = stream;
+      }, 100);
+    } catch (err) {
+      alert('Webcam stream failed/denied. Please use alternative manual file upload option below.');
+    }
+  };
+
+  const captureCameraFrame = () => {
+    const videoEl = document.getElementById('webcam-feed') as HTMLVideoElement;
+    if (!videoEl || !videoStream) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoEl, 0, 0, 320, 240);
+      const dataUrl = canvas.toDataURL('image/jpeg');
+      setCapturedPhoto(dataUrl);
+      
+      // Stop webcam components
+      videoStream.getTracks().forEach(track => track.stop());
+      setVideoStream(null);
+    }
+  };
+
+  const handleManualPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setCapturedPhoto(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Member Registration Handler with Photo Enforcment
   const handleRegisterMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
     if (!newName || !newCard) return alert('Data missing: Name and Card Number are required.');
+    if (!capturedPhoto) return alert('⚠️ PHOTO REGISTRATION MANDATORY:\n\nClient photo capture must be finalized before account registration can proceed.');
     
     const { error } = await supabase.from('members').insert([{
       name: newName, 
@@ -177,16 +302,17 @@ export default function LyftGymSystemMaster() {
       email: newEmail,
       address: newAddress,
       goal: newGoal,
-      assigned_trainer: newAssignedTrainer
+      assigned_trainer: newAssignedTrainer,
+      photo: capturedPhoto
     }]);
     
     if (error) {
-      alert(`⚠️ SUPABASE CONFIGURATION NOTICE:\n\nMessage: ${error.message}`);
-      console.error(error);
+      alert(`⚠️ DATABASE CONFIGURATION NOTICE:\n\nMessage: ${error.message}`);
     } else {
-      alert('🎉 Member successfully added with trainer status alignment!');
+      alert('🎉 Member account successfully established with profile identity matrix!');
       setNewName(''); setNewCard(''); setNewPhone(''); setNewExpiry('');
       setNewEmail(''); setNewAddress(''); setNewGoal(''); setNewAssignedTrainer('');
+      setCapturedPhoto('');
       setActiveTab('members'); 
       refreshCoreDatabaseData();
     }
@@ -195,36 +321,24 @@ export default function LyftGymSystemMaster() {
   // Trainer Matrix Registrator
   const handleRegisterTrainer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
     if (!trainerName) return alert('Trainer name is required.');
 
     const { error } = await supabase.from('trainers').insert([{
-      name: trainerName,
-      specialty: trainerSpecialty,
-      phone_number: trainerPhone,
-      branch_location: selectedBranch
+      name: trainerName, specialty: trainerSpecialty, phone_number: trainerPhone, branch_location: selectedBranch
     }]);
 
-    if (error) {
-      const fallbackTrainer: Trainer = {
-        id: 'temp-' + Date.now(),
-        name: trainerName,
-        specialty: trainerSpecialty,
-        phone_number: trainerPhone,
-        branch_location: selectedBranch
-      };
-      setTrainers([...trainers, fallbackTrainer]);
-      alert(`ℹ️ Trainer saved locally!`);
-    } else {
+    if (!error) {
       alert('🎉 New Trainer successfully added to cloud infrastructure!');
+      setTrainerName(''); setTrainerPhone('');
       refreshCoreDatabaseData();
     }
-    setTrainerName('');
-    setTrainerPhone('');
   };
 
   // Inventory Asset Addition Handler
   const handleRegisterInventory = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
     if (!invName) return alert('Item name is required.');
     
     const { error } = await supabase.from('inventory').insert([{
@@ -232,54 +346,47 @@ export default function LyftGymSystemMaster() {
       unit_price: Number(invPrice), branch_location: selectedBranch
     }]);
     
-    if (error) {
-      alert(`⚠️ DATABASE ERROR:\n\nMessage: ${error.message}`);
-    } else {
+    if (!error) {
       alert('🎉 Asset successfully updated!');
       setInvName(''); setInvStock(50); setInvPrice(1500);
       refreshCoreDatabaseData();
     }
   };
 
-  // Inline Row Synchronizations
+  // Inline Row Synchronizations with view_edit guarding
   const updateMemberRow = async (id: string, updatedField: Partial<Member>) => {
+    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
     const { error } = await supabase.from('members').update(updatedField).eq('id', id);
-    if (!error) {
-      setMembers(members.map(m => m.id === id ? { ...m, ...updatedField } : m));
-    }
+    if (!error) setMembers(members.map(m => m.id === id ? { ...m, ...updatedField } : m));
   };
 
   const updateInventoryRow = async (id: string, updatedField: Partial<InventoryItem>) => {
+    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
     const { error } = await supabase.from('inventory').update(updatedField).eq('id', id);
-    if (!error) {
-      setInventory(inventory.map(i => i.id === id ? { ...i, ...updatedField } : i));
-    } else {
-      alert(`Failed to update item: ${error.message}`);
-    }
+    if (!error) setInventory(inventory.map(i => i.id === id ? { ...i, ...updatedField } : i));
   };
 
-  // Inventory Deletion Logic
   const deleteInventoryItem = async (id: string, name: string) => {
+    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
     if (!confirm(`Are you sure you want to completely delete "${name}" from inventory logs?`)) return;
     
     const { error } = await supabase.from('inventory').delete().eq('id', id);
     if (!error) {
       alert('Asset deleted successfully.');
       setInventory(inventory.filter(i => i.id !== id));
-      // Reset POS cart if it contained the deleted item
       setPosCart(posCart.filter(c => c.item.id !== id));
-    } else {
-      alert(`Error processing deletion: ${error.message}`);
     }
   };
 
   const updateTrainerRow = async (id: string, updatedField: Partial<Trainer>) => {
+    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
     const { error } = await supabase.from('trainers').update(updatedField).eq('id', id);
-    setTrainers(trainers.map(t => t.id === id ? { ...t, ...updatedField } : t));
+    if (!error) setTrainers(trainers.map(t => t.id === id ? { ...t, ...updatedField } : t));
   };
 
   // POS Controls
   const addToCart = (item: InventoryItem) => {
+    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
     if (item.stock_count <= 0) return alert('Item out of stock!');
     const existing = posCart.find(c => c.item.id === item.id);
     if (existing) {
@@ -298,12 +405,13 @@ export default function LyftGymSystemMaster() {
   };
 
   const processSaleCheckout = async () => {
+    if (!canEditCurrentBranch) return alert('Access Denied: Checkout disabled in view-only configuration status.');
     if (posCart.length === 0) return;
     for (const entry of posCart) {
       const updatedStock = entry.item.stock_count - entry.quantity;
       await supabase.from('inventory').update({ stock_count: updatedStock }).eq('id', entry.item.id);
     }
-    alert('Transaction finalized.');
+    alert('Transaction finalized and stock updated.');
     setPosCart([]);
     setCashReceived('');
     refreshCoreDatabaseData();
@@ -325,6 +433,17 @@ export default function LyftGymSystemMaster() {
     }
   };
 
+  // Filter client-side performance rows
+  const filteredMembers = members.filter(m => {
+    const searchLower = memberSearch.toLowerCase();
+    return (
+      (m.name || '').toLowerCase().includes(searchLower) ||
+      (m.card_number || '').toLowerCase().includes(searchLower) ||
+      (m.phone_number || '').toLowerCase().includes(searchLower) ||
+      (m.assigned_trainer || '').toLowerCase().includes(searchLower)
+    );
+  });
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col justify-center items-center px-4">
@@ -336,13 +455,13 @@ export default function LyftGymSystemMaster() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xs uppercase tracking-widest text-zinc-400 font-semibold mb-2">Username</label>
-              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 transition" placeholder="admin" required />
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 transition text-sm" placeholder="admin" required />
             </div>
             <div>
               <label className="block text-xs uppercase tracking-widest text-zinc-400 font-semibold mb-2">Access Key</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 transition" placeholder="••••••••" required />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 transition text-sm" placeholder="••••••••" required />
             </div>
-            {loginError && <p className="text-red-500 text-sm font-medium bg-red-950/30 border border-red-900/50 p-3 rounded-lg">{loginError}</p>}
+            {loginError && <p className="text-red-500 text-xs font-medium bg-red-950/30 border border-red-900/50 p-3 rounded-lg">{loginError}</p>}
             <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition tracking-wide uppercase text-sm mt-2">Authorize Terminal</button>
           </form>
         </div>
@@ -351,24 +470,43 @@ export default function LyftGymSystemMaster() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans relative">
+      
+      {/* Photo Modals for Verification Overview */}
+      {previewPhotoModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4" onClick={() => setPreviewPhotoModal(null)}>
+          <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-2xl max-w-sm w-full shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+            <button className="absolute -top-3 -right-3 bg-red-600 hover:bg-red-700 font-black rounded-full w-8 h-8 text-xs text-white" onClick={() => setPreviewPhotoModal(null)}>✕</button>
+            <img src={previewPhotoModal} alt="Member Face Profile" className="w-full h-auto aspect-square object-cover rounded-xl bg-zinc-950 border border-zinc-800" />
+            <p className="text-center text-[11px] text-zinc-400 mt-2 italic font-mono tracking-wide">Identity Verified Security Thumbnail</p>
+          </div>
+        </div>
+      )}
+
       {/* Top Header Ribbon */}
       <header className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-red-600 font-black text-2xl tracking-tighter">LYFT</span>
-          <span className="text-zinc-400 font-light text-xl">NETWORK ENVIRONMENT</span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1">
+            <span className="text-red-600 font-black text-2xl tracking-tighter">LYFT</span>
+            <span className="text-zinc-400 font-light text-xl">NETWORK</span>
+          </div>
+          {/* Permission Status Indicator Badge */}
+          <div className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${canEditCurrentBranch ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-400' : 'bg-amber-950/40 border-amber-800/60 text-amber-500'}`}>
+            {canEditCurrentBranch ? '⚡ FULL EDITING GRANTED' : '⚠️ READ-ONLY CONSTRAINED'}
+          </div>
         </div>
         
+        {/* Branch Selector: Restricted based on Allowed Locations */}
         <div className="flex items-center gap-2">
           <label className="text-xs uppercase tracking-wider text-zinc-400 font-bold">Active Branch Node:</label>
-          <select value={selectedBranch} onChange={(e) => { setSelectedBranch(e.target.value); setMemberSearch(''); }} className="bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-1.5 focus:border-red-600 font-medium text-sm">
-            <option value="Sheriff Street">Sheriff Street</option>
-            <option value="Tower">Tower</option>
-            <option value="Skeldon">Skeldon</option>
-            <option value="Diamond">Diamond</option>
-            <option value="Canje">Canje</option>
-            <option value="Mahaica">Mahaica</option>
-            <option value="Vreed en Hoop">Vreed en Hoop</option>
+          <select 
+            value={selectedBranch} 
+            onChange={(e) => { setSelectedBranch(e.target.value); setMemberSearch(''); }} 
+            className="bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-1.5 focus:border-red-600 font-medium text-sm focus:outline-none"
+          >
+            {allowedBranchesToSelect.map(branch => (
+              <option key={branch} value={branch}>{branch}</option>
+            ))}
           </select>
         </div>
       </header>
@@ -383,6 +521,11 @@ export default function LyftGymSystemMaster() {
           <button onClick={() => setActiveTab('inventory')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'inventory' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📦 Inventory Logistics</button>
           <button onClick={() => setActiveTab('analytics')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'analytics' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📈 Analytics Overview</button>
           
+          {/* Super Admin Privileged Access Controls */}
+          {currentUser?.access_all_locations && (
+            <button onClick={() => setActiveTab('admin_mgmt')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-bold transition border border-zinc-800 ${activeTab === 'admin_mgmt' ? 'bg-zinc-100 text-zinc-950 font-black' : 'text-red-400 hover:bg-zinc-800'}`}>🔐 Admin Management</button>
+          )}
+
           {/* Workspace Calculator */}
           <div className="pt-6">
             <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-lg space-y-2">
@@ -401,18 +544,18 @@ export default function LyftGymSystemMaster() {
         {/* Main Workspace display */}
         <main className="flex-1 p-6 md:p-8 overflow-y-auto">
 
-          {/* TAB 1: MEMBERS DATABASE */}
+          {/* TAB 1: MEMBERS DATABASE WITH IDENTITY THUMBNAILS */}
           {activeTab === 'members' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-900/40 p-4 border border-zinc-800/80 rounded-xl">
                 <div>
                   <h1 className="text-xl font-bold">{selectedBranch} Roster ({filteredMembers.length} records)</h1>
-                  <p className="text-xs text-zinc-400">Search by name, card, phone, or assigned trainer.</p>
+                  <p className="text-xs text-zinc-400">Search profiles or tap identity thumbnails to confirm biometrics.</p>
                 </div>
                 <div className="w-full sm:w-80">
                   <input 
                     type="text" 
-                    placeholder="🔍 Search name, phone, card or trainer..." 
+                    placeholder="🔍 Search name, phone, card..." 
                     value={memberSearch}
                     onChange={(e) => setMemberSearch(e.target.value)}
                     className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-red-600 placeholder-zinc-500 transition font-medium"
@@ -421,11 +564,12 @@ export default function LyftGymSystemMaster() {
               </div>
 
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden max-h-[650px] overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[1200px]">
+                <table className="w-full text-left border-collapse min-w-[1250px]">
                   <thead className="sticky top-0 bg-zinc-950 z-10 border-b border-zinc-800 text-xs font-bold uppercase text-zinc-400">
                     <tr>
-                      <th className="p-4 w-48">Name</th>
-                      <th className="p-4 w-28">Tier Status</th>
+                      <th className="p-4 w-16 text-center">Photo</th>
+                      <th className="p-4 w-44">Name</th>
+                      <th className="p-4 w-28">Tier</th>
                       <th className="p-4 w-32">Card String</th>
                       <th className="p-4 w-36">Phone</th>
                       <th className="p-4 w-44">Email</th>
@@ -438,36 +582,50 @@ export default function LyftGymSystemMaster() {
                   <tbody className="text-xs divide-y divide-zinc-800">
                     {filteredMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="text-center py-8 text-zinc-500 italic">No corresponding logs found.</td>
+                        <td colSpan={10} className="text-center py-8 text-zinc-500 italic">No corresponding logs found at this branch node.</td>
                       </tr>
                     ) : (
                       filteredMembers.map(m => (
                         <tr key={m.id} className="hover:bg-zinc-800/20">
-                          <td className="p-2"><input type="text" defaultValue={m.name} onBlur={(e) => updateMemberRow(m.id, { name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none" /></td>
+                          {/* Face Avatar Thumbnail Click Trigger */}
+                          <td className="p-2 text-center">
+                            {m.photo ? (
+                              <img 
+                                src={m.photo} 
+                                alt="" 
+                                onClick={() => setPreviewPhotoModal(m.photo!)}
+                                className="w-8 h-8 rounded-full border border-zinc-700 bg-zinc-950 object-cover cursor-zoom-in mx-auto hover:border-red-500 transition"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-950/40 flex items-center justify-center text-[9px] text-zinc-600 font-mono mx-auto">None</div>
+                            )}
+                          </td>
+                          <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.name} onBlur={(e) => updateMemberRow(m.id, { name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none disabled:text-zinc-400" /></td>
                           <td className="p-2">
-                            <select defaultValue={m.membership_type} onChange={(e) => updateMemberRow(m.id, { membership_type: e.target.value as 'Regular' | 'VIP' })} className="bg-transparent text-zinc-300 focus:outline-none font-bold">
+                            <select disabled={!canEditCurrentBranch} defaultValue={m.membership_type} onChange={(e) => updateMemberRow(m.id, { membership_type: e.target.value as 'Regular' | 'VIP' })} className="bg-transparent text-zinc-300 focus:outline-none font-bold disabled:text-zinc-500">
                               <option value="Regular" className="bg-zinc-900">Regular</option>
                               <option value="VIP" className="bg-zinc-900 text-yellow-500">VIP</option>
                             </select>
                           </td>
-                          <td className="p-2 font-mono"><input type="text" defaultValue={m.card_number} onBlur={(e) => updateMemberRow(m.id, { card_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none font-mono" /></td>
-                          <td className="p-2"><input type="text" defaultValue={m.phone_number} onBlur={(e) => updateMemberRow(m.id, { phone_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none" /></td>
-                          <td className="p-2"><input type="text" defaultValue={m.email || ''} onBlur={(e) => updateMemberRow(m.id, { email: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none" placeholder="Add email..." /></td>
-                          <td className="p-2"><input type="text" defaultValue={m.address || ''} onBlur={(e) => updateMemberRow(m.id, { address: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none" placeholder="Add address..." /></td>
-                          <td className="p-2"><input type="text" defaultValue={m.goal || ''} onBlur={(e) => updateMemberRow(m.id, { goal: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none text-zinc-300" placeholder="Weight Loss, etc." /></td>
+                          <td className="p-2 font-mono"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.card_number} onBlur={(e) => updateMemberRow(m.id, { card_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none font-mono disabled:text-zinc-500" /></td>
+                          <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.phone_number} onBlur={(e) => updateMemberRow(m.id, { phone_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none disabled:text-zinc-400" /></td>
+                          <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.email || ''} onBlur={(e) => updateMemberRow(m.id, { email: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none disabled:text-zinc-400" placeholder="Add email..." /></td>
+                          <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.address || ''} onBlur={(e) => updateMemberRow(m.id, { address: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none disabled:text-zinc-400" placeholder="Add address..." /></td>
+                          <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.goal || ''} onBlur={(e) => updateMemberRow(m.id, { goal: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none text-zinc-300 disabled:text-zinc-400" placeholder="Goal detail..." /></td>
                           <td className="p-2">
                             <select 
+                              disabled={!canEditCurrentBranch}
                               defaultValue={m.assigned_trainer || ''} 
                               onChange={(e) => updateMemberRow(m.id, { assigned_trainer: e.target.value })}
-                              className="bg-transparent text-emerald-400 font-medium focus:outline-none w-full"
+                              className="bg-transparent text-emerald-400 font-medium focus:outline-none w-full disabled:text-zinc-500"
                             >
-                              <option value="" className="bg-zinc-900 text-zinc-500">No Assigned Trainer</option>
+                              <option value="" className="bg-zinc-900 text-zinc-500">No Coach Assigned</option>
                               {trainers.map(t => (
                                 <option key={t.id} value={t.name} className="bg-zinc-900 text-zinc-100">{t.name}</option>
                               ))}
                             </select>
                           </td>
-                          <td className="p-2"><input type="date" defaultValue={m.expiry_date} onChange={(e) => updateMemberRow(m.id, { expiry_date: e.target.value })} className="bg-transparent text-zinc-300 focus:outline-none" /></td>
+                          <td className="p-2"><input type="date" disabled={!canEditCurrentBranch} defaultValue={m.expiry_date} onChange={(e) => updateMemberRow(m.id, { expiry_date: e.target.value })} className="bg-transparent text-zinc-300 focus:outline-none disabled:text-zinc-500" /></td>
                         </tr>
                       ))
                     )}
@@ -477,74 +635,141 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 2: REGISTER PROFILE */}
+          {/* TAB 2: PROFILE REGISTRATION WITH LIVE WEBCAM BIOMETRICS */}
           {activeTab === 'register' && (
-            <form onSubmit={handleRegisterMember} className="max-w-2xl bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 shadow-xl">
-              <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">📝 Profile Creation Asset: <span className="text-red-500 font-mono text-sm">{selectedBranch}</span></h2>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Full Legal Name</label>
-                  <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-zinc-100 focus:outline-none focus:border-red-600" placeholder="John Doe" required />
-                </div>
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Membership Designation</label>
-                  <select value={newType} onChange={(e) => setNewType(e.target.value as 'Regular' | 'VIP')} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs font-semibold focus:outline-none text-zinc-100">
-                    <option value="Regular">Regular Class Access</option>
-                    <option value="VIP">VIP Elite Pass</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">RFID Access Card String / Code</label>
-                  <input type="text" value={newCard} onChange={(e) => setNewCard(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs font-mono focus:outline-none focus:border-red-600" placeholder="e.g. 8752" required />
-                </div>
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Telephone Contact System</label>
-                  <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="e.g. 5926671954" />
-                </div>
-              </div>
-
-              <div className="border-t border-zinc-800/80 pt-3 space-y-4">
-                <h3 className="text-xs uppercase tracking-widest text-zinc-500 font-bold">Expanded Diagnostics & Onboarding</h3>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+              <form onSubmit={handleRegisterMember} className="xl:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 shadow-xl">
+                <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">📝 Profile Creation Asset: <span className="text-red-500 font-mono text-sm">{selectedBranch}</span></h2>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Email Address</label>
-                    <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="client@domain.com" />
+                    <label className="block text-xs text-zinc-400 mb-1">Full Legal Name</label>
+                    <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-zinc-100 focus:outline-none focus:border-red-600" placeholder="John Doe" required />
                   </div>
                   <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Home / Residential Address</label>
-                    <input type="text" value={newAddress} onChange={(e) => setNewAddress(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="Sheriff St, Georgetown" />
+                    <label className="block text-xs text-zinc-400 mb-1">Membership Designation</label>
+                    <select value={newType} onChange={(e) => setNewType(e.target.value as 'Regular' | 'VIP')} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs font-semibold focus:outline-none text-zinc-100">
+                      <option value="Regular">Regular Class Access</option>
+                      <option value="VIP">VIP Elite Pass</option>
+                    </select>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Goal in the Gym</label>
-                    <input type="text" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="Weight Loss, Muscle Gain, Endurance" />
+                    <label className="block text-xs text-zinc-400 mb-1">RFID Access Card String / Code</label>
+                    <input type="text" value={newCard} onChange={(e) => setNewCard(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs font-mono focus:outline-none focus:border-red-600" placeholder="e.g. 8752" required />
                   </div>
                   <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Do you need a Trainer?</label>
-                    <select value={newAssignedTrainer} onChange={(e) => setNewAssignedTrainer(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-emerald-400 font-medium focus:outline-none focus:border-red-600">
-                      <option value="">No / Don't Need A Trainer</option>
-                      {trainers.map(t => (
-                        <option key={t.id} value={t.name}>Yes {'->'} Assign to {t.name}</option>
-                      ))}
-                    </select>
+                    <label className="block text-xs text-zinc-400 mb-1">Telephone Contact System</label>
+                    <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="e.g. 5926671954" />
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1">Contract Term Expiration</label>
-                <input type="date" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" />
-              </div>
+                <div className="border-t border-zinc-800/80 pt-3 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Email Address</label>
+                      <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="client@domain.com" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Residential Address</label>
+                      <input type="text" value={newAddress} onChange={(e) => setNewAddress(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="Sheriff St, Georgetown" />
+                    </div>
+                  </div>
 
-              <button type="submit" className="bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded text-xs font-bold uppercase tracking-wide transition">Commit Member Ledger</button>
-            </form>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Goal in the Gym</label>
+                      <input type="text" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="Weight Loss, Muscle Gain" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Assign Coach Status</label>
+                      <select value={newAssignedTrainer} onChange={(e) => setNewAssignedTrainer(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-emerald-400 font-medium focus:outline-none focus:border-red-600">
+                        <option value="">No / Don't Need A Trainer</option>
+                        {trainers.map(t => (
+                          <option key={t.id} value={t.name}>Yes {'->'} Assign to {t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Contract Term Expiration</label>
+                  <input type="date" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" />
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={!canEditCurrentBranch}
+                  className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-bold py-3 px-4 rounded text-xs uppercase tracking-wide transition"
+                >
+                  {canEditCurrentBranch ? 'Commit Member Ledger Profile' : '🔒 Read-Only Restrained'}
+                </button>
+              </form>
+
+              {/* MANDATORY PHOTO REGISTRATION STATION */}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-4 shadow-xl">
+                <div>
+                  <h3 className="text-sm font-bold text-zinc-200">📸 Identity Snapshot Terminal</h3>
+                  <p className="text-[11px] text-zinc-500">A live biometric user photo is required for onboarding.</p>
+                </div>
+
+                <div className="w-full aspect-square bg-zinc-950 border border-zinc-800 rounded-lg overflow-hidden flex flex-col justify-center items-center relative">
+                  {capturedPhoto ? (
+                    <img src={capturedPhoto} alt="Captured Face Payload" className="w-full h-full object-cover" />
+                  ) : videoStream ? (
+                    <video id="webcam-feed" autoPlay playsInline className="w-full h-full object-cover scale-x-[-1]"></video>
+                  ) : (
+                    <div className="text-center p-4 space-y-2">
+                      <span className="text-3xl block">👤</span>
+                      <p className="text-xs text-zinc-500 italic">No image data staged yet.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {!videoStream ? (
+                    <button 
+                      type="button" 
+                      onClick={startCameraInput} 
+                      className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs py-2 rounded font-semibold transition"
+                    >
+                      📷 Initialize Live Webcam
+                    </button>
+                  ) : (
+                    <button 
+                      type="button" 
+                      onClick={captureCameraFrame} 
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 rounded font-bold tracking-wide animate-pulse transition"
+                    >
+                      🛑 Freeze & Save Photo Frame
+                    </button>
+                  )}
+
+                  <div className="text-center">
+                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">- OR -</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Upload File Manually</label>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleManualPhotoUpload} 
+                      className="w-full text-xs text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-zinc-800 file:text-zinc-300 file:cursor-pointer" 
+                    />
+                  </div>
+
+                  {capturedPhoto && (
+                    <div className="bg-emerald-950/20 border border-emerald-900/50 rounded p-2 text-center text-[10px] text-emerald-400 font-mono">
+                      ✓ Profile Identity Matrix Staged
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* TAB 3: TRAINER MANAGEMENT WORKSPACE */}
@@ -556,12 +781,11 @@ export default function LyftGymSystemMaster() {
                   <input type="text" value={trainerName} onChange={(e) => setTrainerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-red-600" placeholder="e.g. Ravin Mahabal" required />
                 </div>
                 <div>
-                  <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Specialty / Discipline</label>
+                  <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Discipline Specialty</label>
                   <select value={trainerSpecialty} onChange={(e) => setTrainerSpecialty(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-red-600">
                     <option value="Personal Training">Personal Training</option>
                     <option value="Elite Strength Specialist">Elite Strength Specialist</option>
                     <option value="Bodybuilding & Nutrition Coach">Bodybuilding & Nutrition Coach</option>
-                    <option value="Cardio / Aerobics Instructor">Cardio / Aerobics Instructor</option>
                   </select>
                 </div>
                 <div>
@@ -569,14 +793,13 @@ export default function LyftGymSystemMaster() {
                   <input type="text" value={trainerPhone} onChange={(e) => setTrainerPhone(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-red-600" placeholder="e.g. 592-622-1111" />
                 </div>
                 <div>
-                  <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded text-xs uppercase tracking-wide transition">Add Trainer Asset</button>
+                  <button type="submit" disabled={!canEditCurrentBranch} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-bold py-2 rounded text-xs uppercase tracking-wide transition">Add Trainer Asset</button>
                 </div>
               </form>
 
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
                 <div className="p-4 bg-zinc-950 border-b border-zinc-800">
                   <h2 className="text-sm font-bold text-zinc-200">Active Coach Roster ({selectedBranch})</h2>
-                  <p className="text-xs text-zinc-500">Edit fields inline to adapt trainer properties instantly.</p>
                 </div>
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -584,20 +807,14 @@ export default function LyftGymSystemMaster() {
                       <th className="p-4">Trainer Name</th>
                       <th className="p-4">Discipline Designation</th>
                       <th className="p-4">Contact System</th>
-                      <th className="p-4">Branch Node</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs divide-y divide-zinc-800">
                     {trainers.map(t => (
                       <tr key={t.id} className="hover:bg-zinc-800/10">
-                        <td className="p-3"><input type="text" defaultValue={t.name} onBlur={(e) => updateTrainerRow(t.id, { name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none font-medium" /></td>
-                        <td className="p-3 text-zinc-300">
-                          <input type="text" defaultValue={t.specialty} onBlur={(e) => updateTrainerRow(t.id, { specialty: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none" />
-                        </td>
-                        <td className="p-3 font-mono">
-                          <input type="text" defaultValue={t.phone_number} onBlur={(e) => updateTrainerRow(t.id, { phone_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none" />
-                        </td>
-                        <td className="p-3 text-zinc-500 font-mono">{t.branch_location}</td>
+                        <td className="p-3"><input type="text" disabled={!canEditCurrentBranch} defaultValue={t.name} onBlur={(e) => updateTrainerRow(t.id, { name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none font-medium disabled:text-zinc-400" /></td>
+                        <td className="p-3"><input type="text" disabled={!canEditCurrentBranch} defaultValue={t.specialty} onBlur={(e) => updateTrainerRow(t.id, { specialty: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none disabled:text-zinc-400" /></td>
+                        <td className="p-3 font-mono"><input type="text" disabled={!canEditCurrentBranch} defaultValue={t.phone_number} onBlur={(e) => updateTrainerRow(t.id, { phone_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none disabled:text-zinc-400" /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -613,7 +830,7 @@ export default function LyftGymSystemMaster() {
                 <h1 className="text-xl font-bold">{selectedBranch} Front Register</h1>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {inventory.map(item => (
-                    <button key={item.id} onClick={() => addToCart(item)} className="bg-zinc-900 hover:bg-zinc-800/80 border border-zinc-800 p-4 rounded-xl text-left transition flex flex-col justify-between h-28 group relative overflow-hidden">
+                    <button key={item.id} onClick={() => addToCart(item)} className="bg-zinc-900 hover:bg-zinc-800/80 border border-zinc-800 p-4 rounded-xl text-left transition flex flex-col justify-between h-28 group">
                       <div>
                         <span className="text-xs text-zinc-500 block uppercase font-bold tracking-tight">{item.category}</span>
                         <span className="text-sm font-semibold text-zinc-200 mt-1 block leading-tight">{item.item_name}</span>
@@ -627,12 +844,11 @@ export default function LyftGymSystemMaster() {
                 </div>
               </div>
               
-              {/* POS Cart Summary */}
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col justify-between shadow-xl h-[500px]">
                 <div>
-                  <h2 className="text-sm uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2 mb-3">Active Terminal Checkout</h2>
+                  <h2 className="text-sm uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2 mb-3">Checkout Terminal</h2>
                   <div className="space-y-2 overflow-y-auto max-h-60 pr-1">
-                    {posCart.length === 0 ? <p className="text-xs text-zinc-500 italic py-4 text-center">Cart is empty.</p> : posCart.map(c => (
+                    {posCart.length === 0 ? <p className="text-xs text-zinc-500 italic py-4 text-center">Cart empty.</p> : posCart.map(c => (
                       <div key={c.item.id} className="flex justify-between items-center text-xs bg-zinc-950 p-2 rounded border border-zinc-800">
                         <div>
                           <p className="font-semibold">{c.item.item_name}</p>
@@ -644,7 +860,6 @@ export default function LyftGymSystemMaster() {
                   </div>
                 </div>
                 
-                {/* Calculations */}
                 <div className="border-t border-zinc-800 pt-3 space-y-2 font-mono text-xs">
                   <div className="flex justify-between text-zinc-400"><span>Subtotal:</span><span>${calculateCartTotals().subtotal.toLocaleString()}</span></div>
                   <div className="flex justify-between text-zinc-400"><span>VAT (14%):</span><span>${calculateCartTotals().tax.toLocaleString()}</span></div>
@@ -656,7 +871,9 @@ export default function LyftGymSystemMaster() {
                   {Number(cashReceived) >= calculateCartTotals().total && (
                     <div className="flex justify-between text-emerald-400 font-bold py-1 bg-emerald-950/20 px-2 rounded border border-emerald-900/30"><span>Change:</span><span>${(Number(cashReceived) - calculateCartTotals().total).toLocaleString()}</span></div>
                   )}
-                  <button onClick={processSaleCheckout} disabled={posCart.length === 0} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-800 text-white py-2.5 rounded font-bold uppercase text-xs tracking-wider transition">Process Checkout</button>
+                  <button onClick={processSaleCheckout} disabled={posCart.length === 0 || !canEditCurrentBranch} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white py-2.5 rounded font-bold uppercase text-xs tracking-wider transition">
+                    {canEditCurrentBranch ? 'Process Checkout' : '🔒 Checkout Locked'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -683,7 +900,7 @@ export default function LyftGymSystemMaster() {
                   <input type="number" value={invStock} onChange={(e) => setInvStock(Number(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-red-600" />
                 </div>
                 <div>
-                  <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 rounded text-xs uppercase tracking-wide transition">Add Asset</button>
+                  <button type="submit" disabled={!canEditCurrentBranch} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-bold py-1.5 rounded text-xs uppercase tracking-wide transition">Add Asset</button>
                 </div>
               </form>
 
@@ -692,84 +909,181 @@ export default function LyftGymSystemMaster() {
                   <thead>
                     <tr className="bg-zinc-950 border-b border-zinc-800 text-xs font-bold uppercase text-zinc-400">
                       <th className="p-4">Item Name</th>
-                      <th className="p-4">Categorization</th>
-                      <th className="p-4 w-32">Units in Stock</th>
-                      <th className="p-4 w-36">Retail Unit Price ($)</th>
+                      <th className="p-4">Category</th>
+                      <th className="p-4 w-32">Stock Count</th>
+                      <th className="p-4 w-36">Retail Price ($)</th>
                       <th className="p-4 w-24 text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs divide-y divide-zinc-800">
-                    {inventory.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="text-center py-6 text-zinc-500 italic">No inventory tracked at {selectedBranch} yet.</td>
+                    {inventory.map(i => (
+                      <tr key={i.id} className="hover:bg-zinc-800/20">
+                        <td className="p-3"><input type="text" disabled={!canEditCurrentBranch} defaultValue={i.item_name} onBlur={(e) => updateInventoryRow(i.id, { item_name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none font-medium disabled:text-zinc-400" /></td>
+                        <td className="p-3 text-zinc-400">{i.category}</td>
+                        <td className="p-3"><input type="number" disabled={!canEditCurrentBranch} defaultValue={i.stock_count} onBlur={(e) => updateInventoryRow(i.id, { stock_count: Number(e.target.value) })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-20 focus:outline-none font-mono disabled:text-zinc-400" /></td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1 bg-zinc-950/40 px-2 py-1 rounded border border-zinc-800 focus-within:border-red-600 max-w-[120px]">
+                            <span className="text-emerald-500 font-bold font-mono">$</span>
+                            <input 
+                              type="number" 
+                              disabled={!canEditCurrentBranch}
+                              defaultValue={i.unit_price} 
+                              onBlur={(e) => updateInventoryRow(i.id, { unit_price: Number(e.target.value) })} 
+                              className="bg-transparent w-full focus:outline-none font-mono text-emerald-400 font-bold text-xs disabled:text-zinc-500" 
+                            />
+                          </div>
+                        </td>
+                        <td className="p-3 text-center">
+                          <button 
+                            onClick={() => deleteInventoryItem(i.id, i.item_name)}
+                            disabled={!canEditCurrentBranch}
+                            className="bg-red-950/40 hover:bg-red-600 hover:text-white disabled:hover:bg-transparent disabled:text-zinc-600 border border-red-900/40 disabled:border-zinc-800 text-red-400 rounded p-1.5 px-2.5 font-bold transition text-[11px]"
+                          >
+                            ✕ Delete
+                          </button>
+                        </td>
                       </tr>
-                    ) : (
-                      inventory.map(i => (
-                        <tr key={i.id} className="hover:bg-zinc-800/20">
-                          <td className="p-3"><input type="text" defaultValue={i.item_name} onBlur={(e) => updateInventoryRow(i.id, { item_name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none font-medium" /></td>
-                          <td className="p-3 text-zinc-400">{i.category}</td>
-                          <td className="p-3"><input type="number" defaultValue={i.stock_count} onBlur={(e) => updateInventoryRow(i.id, { stock_count: Number(e.target.value) })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-20 focus:outline-none font-mono" /></td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-1 bg-zinc-950/40 px-2 py-1 rounded border border-zinc-800 focus-within:border-red-600 max-w-[120px]">
-                              <span className="text-emerald-500 font-bold font-mono">$</span>
-                              <input 
-                                type="number" 
-                                step="any"
-                                defaultValue={i.unit_price} 
-                                onBlur={(e) => updateInventoryRow(i.id, { unit_price: Number(e.target.value) })} 
-                                className="bg-transparent w-full focus:outline-none font-mono text-emerald-400 font-bold text-xs" 
-                              />
-                            </div>
-                          </td>
-                          <td className="p-3 text-center">
-                            <button 
-                              onClick={() => deleteInventoryItem(i.id, i.item_name)}
-                              className="bg-red-950/40 hover:bg-red-600 hover:text-white border border-red-900/40 text-red-400 rounded p-1.5 px-2.5 font-bold transition text-[11px]"
-                              title="Delete Item"
-                            >
-                              ✕ Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* TAB 6: ANALYTICS */}
+          {/* TAB 6: ANALYTICS OVERVIEW */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
               <div>
                 <h1 className="text-xl font-bold">{selectedBranch} Analytics</h1>
-                <p className="text-xs text-zinc-400">Operational distribution indexes across the branch infrastructure.</p>
               </div>
-
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Branch Profiles</span><div className="text-2xl font-black text-red-500 mt-1">{members.length} Accounts</div></div>
-                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">SKUs Registered</span><div className="text-2xl font-black text-zinc-100 mt-1">{inventory.length} Stock Units</div></div>
-                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Projected Value Flow</span><div className="text-2xl font-black text-emerald-400 mt-1">${(inventory.reduce((sum, i) => sum + (i.stock_count * i.unit_price), 0) + (members.length * 15000)).toLocaleString()}</div></div>
+                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">SKUs Tracked</span><div className="text-2xl font-black text-zinc-100 mt-1">{inventory.length} Units</div></div>
+                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Value Flow</span><div className="text-2xl font-black text-emerald-400 mt-1">${(inventory.reduce((sum, i) => sum + (i.stock_count * i.unit_price), 0) + (members.length * 15000)).toLocaleString()}</div></div>
               </div>
+            </div>
+          )}
 
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl">
-                <h3 className="text-xs uppercase tracking-widest text-zinc-400 font-bold mb-6">Financial Cycle Breakdown ({selectedBranch})</h3>
-                <div className="h-48 flex items-end justify-between gap-4 pt-4 border-b border-zinc-800 border-l px-4">
-                  {[
-                    { label: 'Q1 Intake', height: 'h-24', val: '$1.4M' },
-                    { label: 'Q2 Subscriptions', height: 'h-36', val: '$2.2M' },
-                    { label: 'Q3 Concessions', height: 'h-16', val: '$0.9M' },
-                    { label: 'Q4 Premium Plan', height: 'h-44', val: '$2.8M' }
-                  ].map((bar, index) => (
-                    <div key={index} className="flex flex-col items-center flex-1 group">
-                      <span className="text-[10px] font-mono text-emerald-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity mb-2">{bar.val}</span>
-                      <div className={`w-full bg-gradient-to-t from-red-700 to-red-500 rounded-t group-hover:to-red-400 transition-all shadow-md shadow-red-600/10 ${bar.height}`}></div>
-                      <span className="text-[10px] text-zinc-500 font-medium mt-2 tracking-tight">{bar.label}</span>
+          {/* NEW TAB 7: PER-LOCATION PRIVILEGED ADMIN USER PROVISIONING */}
+          {activeTab === 'admin_mgmt' && currentUser?.access_all_locations && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+              
+              {/* Form to provision new admins */}
+              <form onSubmit={handleCreateAdmin} className="lg:col-span-1 bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4 shadow-xl">
+                <div>
+                  <h2 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">🔐 Provision Admin Credential</h2>
+                  <p className="text-xs text-zinc-500">Configure separate localized access matrices and roles.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Username / ID</label>
+                  <input type="text" value={admUsername} onChange={(e) => setAdmUsername(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-2.5 text-xs text-zinc-100 font-mono focus:outline-none focus:border-zinc-500" placeholder="receptionist_sheriff" required />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Security Access Key (Password)</label>
+                  <input type="password" value={admPassword} onChange={(e) => setAdmPassword(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-2.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500" placeholder="••••••••" required />
+                </div>
+
+                <div className="flex items-center gap-2 bg-zinc-950 p-3 rounded border border-zinc-800">
+                  <input 
+                    type="checkbox" 
+                    id="admAccessAll" 
+                    checked={admAccessAll} 
+                    onChange={(e) => setAdmAccessAll(e.target.checked)} 
+                    className="accent-red-600 scale-110 cursor-pointer" 
+                  />
+                  <label htmlFor="admAccessAll" className="text-xs font-bold text-red-400 cursor-pointer select-none">Universal Admin (All Locations + Edit Access)</label>
+                </div>
+
+                {/* Granular Per-Branch Authorization Matrix Settings */}
+                {!admAccessAll && (
+                  <div className="space-y-2 border-t border-zinc-800 pt-3">
+                    <label className="block text-xs text-zinc-400 font-bold uppercase tracking-wider mb-2">Location Node Permissions</label>
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {allBranches.map(branch => {
+                        const isChecked = admBranches.includes(branch);
+                        return (
+                          <div key={branch} className="bg-zinc-950/60 p-2.5 rounded border border-zinc-800 flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-medium text-zinc-200 flex items-center gap-2 cursor-pointer">
+                                <input 
+                                  type="checkbox" 
+                                  checked={isChecked} 
+                                  onChange={() => toggleAdmBranch(branch)} 
+                                  className="accent-zinc-100" 
+                                />
+                                {branch}
+                              </label>
+                              {isChecked && <span className="text-[9px] bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400 uppercase font-mono">Assigned</span>}
+                            </div>
+                            
+                            {isChecked && (
+                              <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-zinc-900 p-1.5 rounded border border-zinc-800">
+                                <label className="flex items-center gap-1 cursor-pointer">
+                                  <input 
+                                    type="radio" 
+                                    name={`perm-${branch}`} 
+                                    checked={admPerms[branch] === 'view_only'} 
+                                    onChange={() => setAdmBranchPermLevel(branch, 'view_only')} 
+                                  />
+                                  View Only
+                                </label>
+                                <label className="flex items-center gap-1 cursor-pointer text-emerald-400 font-medium">
+                                  <input 
+                                    type="radio" 
+                                    name={`perm-${branch}`} 
+                                    checked={admPerms[branch] === 'view_edit'} 
+                                    onChange={() => setAdmBranchPermLevel(branch, 'view_edit')} 
+                                  />
+                                  View & Edit
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wide transition">
+                  Provision Admin Profile
+                </button>
+              </form>
+
+              {/* Roster of active system admins */}
+              <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-xl">
+                <div className="p-4 bg-zinc-950 border-b border-zinc-800">
+                  <h3 className="text-xs uppercase tracking-widest text-zinc-400 font-bold">Active System Admins Registry</h3>
+                </div>
+                <div className="divide-y divide-zinc-800">
+                  {systemAdmins.map(adm => (
+                    <div key={adm.id} className="p-4 hover:bg-zinc-800/10 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="font-mono text-xs text-zinc-200 font-bold">👤 {adm.username}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${adm.access_all_locations ? 'bg-red-950/50 text-red-400 border border-red-900/40' : 'bg-zinc-950 text-zinc-400 border border-zinc-800'}`}>
+                          {adm.access_all_locations ? '⭐ UNIVERSAL PRIVILEGES' : '⚓ LOCALLY RESTRICTED'}
+                        </span>
+                      </div>
+                      
+                      {!adm.access_all_locations && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {(adm.allowed_branches || []).map(b => {
+                            const isEditable = adm.branch_permissions?.[b] === 'view_edit';
+                            return (
+                              <span key={b} className={`text-[10px] px-2 py-0.5 rounded border font-medium ${isEditable ? 'bg-emerald-950/20 border-emerald-900/30 text-emerald-400' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
+                                {b} ({isEditable ? 'Write' : 'Read'})
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
+
             </div>
           )}
 
