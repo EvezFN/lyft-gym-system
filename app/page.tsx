@@ -39,7 +39,7 @@ interface Trainer {
 interface AdminUser {
   id: string;
   username: string;
-  password?: string;
+  name?: string;
   access_all_locations: boolean;
   allowed_branches: string[];
   branch_permissions: Record<string, 'view_only' | 'view_edit'>;
@@ -99,6 +99,7 @@ export default function LyftGymSystemMaster() {
   const [invPrice, setInvPrice] = useState<number>(1500); 
 
   // New Admin User Registration Configuration States
+  const [admName, setAdmName] = useState('');
   const [admUsername, setAdmUsername] = useState('');
   const [admPassword, setAdmPassword] = useState('');
   const [admAccessAll, setAdmAccessAll] = useState(false);
@@ -141,6 +142,7 @@ export default function LyftGymSystemMaster() {
       const userPayload: AdminUser = {
         id: data.id,
         username: data.username,
+        name: data.name || data.username,
         access_all_locations: data.access_all_locations ?? (data.username === 'admin'),
         allowed_branches: data.allowed_branches || ['Sheriff Street'],
         branch_permissions: data.branch_permissions || { 'Sheriff Street': 'view_edit' }
@@ -186,7 +188,7 @@ export default function LyftGymSystemMaster() {
 
     // 4. If Super Admin, fetch all admin configurations
     if (currentUser?.access_all_locations) {
-      const { data: admData } = await supabase.from('system_users').select('id, username, access_all_locations, allowed_branches, branch_permissions');
+      const { data: admData } = await supabase.from('system_users').select('id, username, name, access_all_locations, allowed_branches, branch_permissions');
       if (admData) setSystemAdmins(admData);
     }
   };
@@ -214,13 +216,14 @@ export default function LyftGymSystemMaster() {
     setAdmPerms({ ...admPerms, [branch]: level });
   };
 
-  // Create Restricted / Universal Admin Account
+  // Create Restricted / Universal Admin Account with Name mapping fixed
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!admUsername || !admPassword) return alert('Provide username and password');
+    if (!admUsername || !admPassword || !admName) return alert('Provide full name, username, and password');
     if (!admAccessAll && admBranches.length === 0) return alert('Select at least one allowed branch or choose Universal Access.');
 
     const { error } = await supabase.from('system_users').insert([{
+      name: admName.trim(),
       username: admUsername.toLowerCase().trim(),
       password: admPassword,
       access_all_locations: admAccessAll,
@@ -234,6 +237,7 @@ export default function LyftGymSystemMaster() {
       alert(`Error creating admin user: ${error.message}`);
     } else {
       alert('🎉 New Admin Profile safely registered into matrix system logs!');
+      setAdmName('');
       setAdmUsername('');
       setAdmPassword('');
       setAdmAccessAll(false);
@@ -496,7 +500,7 @@ export default function LyftGymSystemMaster() {
           </div>
         </div>
         
-        {/* Branch Selector: Restricted based on Allowed Locations */}
+        {/* Branch Selector */}
         <div className="flex items-center gap-2">
           <label className="text-xs uppercase tracking-wider text-zinc-400 font-bold">Active Branch Node:</label>
           <select 
@@ -544,7 +548,7 @@ export default function LyftGymSystemMaster() {
         {/* Main Workspace display */}
         <main className="flex-1 p-6 md:p-8 overflow-y-auto">
 
-          {/* TAB 1: MEMBERS DATABASE WITH IDENTITY THUMBNAILS */}
+          {/* TAB 1: MEMBERS DATABASE */}
           {activeTab === 'members' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-900/40 p-4 border border-zinc-800/80 rounded-xl">
@@ -587,7 +591,6 @@ export default function LyftGymSystemMaster() {
                     ) : (
                       filteredMembers.map(m => (
                         <tr key={m.id} className="hover:bg-zinc-800/20">
-                          {/* Face Avatar Thumbnail Click Trigger */}
                           <td className="p-2 text-center">
                             {m.photo ? (
                               <img 
@@ -635,7 +638,7 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 2: PROFILE REGISTRATION WITH LIVE WEBCAM BIOMETRICS */}
+          {/* TAB 2: PROFILE REGISTRATION */}
           {activeTab === 'register' && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
               <form onSubmit={handleRegisterMember} className="xl:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 shadow-xl">
@@ -731,48 +734,24 @@ export default function LyftGymSystemMaster() {
 
                 <div className="space-y-2">
                   {!videoStream ? (
-                    <button 
-                      type="button" 
-                      onClick={startCameraInput} 
-                      className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs py-2 rounded font-semibold transition"
-                    >
-                      📷 Initialize Live Webcam
-                    </button>
+                    <button type="button" onClick={startCameraInput} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs py-2 rounded font-semibold transition">📷 Initialize Live Webcam</button>
                   ) : (
-                    <button 
-                      type="button" 
-                      onClick={captureCameraFrame} 
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 rounded font-bold tracking-wide animate-pulse transition"
-                    >
-                      🛑 Freeze & Save Photo Frame
-                    </button>
+                    <button type="button" onClick={captureCameraFrame} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 rounded font-bold tracking-wide animate-pulse transition">🛑 Freeze & Save Photo Frame</button>
                   )}
-
-                  <div className="text-center">
-                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">- OR -</span>
-                  </div>
-
+                  <div className="text-center"><span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">- OR -</span></div>
                   <div>
                     <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Upload File Manually</label>
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      onChange={handleManualPhotoUpload} 
-                      className="w-full text-xs text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-zinc-800 file:text-zinc-300 file:cursor-pointer" 
-                    />
+                    <input type="file" accept="image/*" onChange={handleManualPhotoUpload} className="w-full text-xs text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-zinc-800 file:text-zinc-300 file:cursor-pointer" />
                   </div>
-
                   {capturedPhoto && (
-                    <div className="bg-emerald-950/20 border border-emerald-900/50 rounded p-2 text-center text-[10px] text-emerald-400 font-mono">
-                      ✓ Profile Identity Matrix Staged
-                    </div>
+                    <div className="bg-emerald-950/20 border border-emerald-900/50 rounded p-2 text-center text-[10px] text-emerald-400 font-mono">✓ Profile Identity Matrix Staged</div>
                   )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: TRAINER MANAGEMENT WORKSPACE */}
+          {/* TAB 3: TRAINER MANAGEMENT */}
           {activeTab === 'trainers' && (
             <div className="space-y-6">
               <form onSubmit={handleRegisterTrainer} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
@@ -798,9 +777,6 @@ export default function LyftGymSystemMaster() {
               </form>
 
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-                <div className="p-4 bg-zinc-950 border-b border-zinc-800">
-                  <h2 className="text-sm font-bold text-zinc-200">Active Coach Roster ({selectedBranch})</h2>
-                </div>
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-zinc-950/60 border-b border-zinc-800 text-xs font-bold uppercase text-zinc-400">
@@ -879,7 +855,7 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 5: INVENTORY LOGISTICS WITH FULL PRICE EDITING AND ITEM DELETION */}
+          {/* TAB 5: INVENTORY LOGISTICS */}
           {activeTab === 'inventory' && (
             <div className="space-y-6">
               <form onSubmit={handleRegisterInventory} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
@@ -924,23 +900,11 @@ export default function LyftGymSystemMaster() {
                         <td className="p-3">
                           <div className="flex items-center gap-1 bg-zinc-950/40 px-2 py-1 rounded border border-zinc-800 focus-within:border-red-600 max-w-[120px]">
                             <span className="text-emerald-500 font-bold font-mono">$</span>
-                            <input 
-                              type="number" 
-                              disabled={!canEditCurrentBranch}
-                              defaultValue={i.unit_price} 
-                              onBlur={(e) => updateInventoryRow(i.id, { unit_price: Number(e.target.value) })} 
-                              className="bg-transparent w-full focus:outline-none font-mono text-emerald-400 font-bold text-xs disabled:text-zinc-500" 
-                            />
+                            <input type="number" disabled={!canEditCurrentBranch} defaultValue={i.unit_price} onBlur={(e) => updateInventoryRow(i.id, { unit_price: Number(e.target.value) })} className="bg-transparent w-full focus:outline-none font-mono text-emerald-400 font-bold text-xs disabled:text-zinc-500" />
                           </div>
                         </td>
                         <td className="p-3 text-center">
-                          <button 
-                            onClick={() => deleteInventoryItem(i.id, i.item_name)}
-                            disabled={!canEditCurrentBranch}
-                            className="bg-red-950/40 hover:bg-red-600 hover:text-white disabled:hover:bg-transparent disabled:text-zinc-600 border border-red-900/40 disabled:border-zinc-800 text-red-400 rounded p-1.5 px-2.5 font-bold transition text-[11px]"
-                          >
-                            ✕ Delete
-                          </button>
+                          <button onClick={() => deleteInventoryItem(i.id, i.item_name)} disabled={!canEditCurrentBranch} className="bg-red-950/40 hover:bg-red-600 hover:text-white disabled:hover:bg-transparent disabled:text-zinc-600 border border-red-900/40 disabled:border-zinc-800 text-red-400 rounded p-1.5 px-2.5 font-bold transition text-[11px]">✕ Delete</button>
                         </td>
                       </tr>
                     ))}
@@ -953,9 +917,7 @@ export default function LyftGymSystemMaster() {
           {/* TAB 6: ANALYTICS OVERVIEW */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
-              <div>
-                <h1 className="text-xl font-bold">{selectedBranch} Analytics</h1>
-              </div>
+              <div><h1 className="text-xl font-bold">{selectedBranch} Analytics</h1></div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Branch Profiles</span><div className="text-2xl font-black text-red-500 mt-1">{members.length} Accounts</div></div>
                 <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">SKUs Tracked</span><div className="text-2xl font-black text-zinc-100 mt-1">{inventory.length} Units</div></div>
@@ -964,7 +926,7 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* NEW TAB 7: PER-LOCATION PRIVILEGED ADMIN USER PROVISIONING */}
+          {/* TAB 7: PER-LOCATION PRIVILEGED ADMIN USER PROVISIONING (FIXED WITH FULL NAME) */}
           {activeTab === 'admin_mgmt' && currentUser?.access_all_locations && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
               
@@ -973,6 +935,12 @@ export default function LyftGymSystemMaster() {
                 <div>
                   <h2 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">🔐 Provision Admin Credential</h2>
                   <p className="text-xs text-zinc-500">Configure separate localized access matrices and roles.</p>
+                </div>
+
+                {/* FIXED SOLUTION: NEW MANDATORY INPUT TO SATISFY SQL NOT-NULL COLUMN CONSTRAINT */}
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Full Real Name</label>
+                  <input type="text" value={admName} onChange={(e) => setAdmName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-2.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500" placeholder="Jane Smith" required />
                 </div>
 
                 <div>
@@ -986,13 +954,7 @@ export default function LyftGymSystemMaster() {
                 </div>
 
                 <div className="flex items-center gap-2 bg-zinc-950 p-3 rounded border border-zinc-800">
-                  <input 
-                    type="checkbox" 
-                    id="admAccessAll" 
-                    checked={admAccessAll} 
-                    onChange={(e) => setAdmAccessAll(e.target.checked)} 
-                    className="accent-red-600 scale-110 cursor-pointer" 
-                  />
+                  <input type="checkbox" id="admAccessAll" checked={admAccessAll} onChange={(e) => setAdmAccessAll(e.target.checked)} className="accent-red-600 scale-110 cursor-pointer" />
                   <label htmlFor="admAccessAll" className="text-xs font-bold text-red-400 cursor-pointer select-none">Universal Admin (All Locations + Edit Access)</label>
                 </div>
 
@@ -1007,12 +969,7 @@ export default function LyftGymSystemMaster() {
                           <div key={branch} className="bg-zinc-950/60 p-2.5 rounded border border-zinc-800 flex flex-col gap-2">
                             <div className="flex items-center justify-between">
                               <label className="text-xs font-medium text-zinc-200 flex items-center gap-2 cursor-pointer">
-                                <input 
-                                  type="checkbox" 
-                                  checked={isChecked} 
-                                  onChange={() => toggleAdmBranch(branch)} 
-                                  className="accent-zinc-100" 
-                                />
+                                <input type="checkbox" checked={isChecked} onChange={() => toggleAdmBranch(branch)} className="accent-zinc-100" />
                                 {branch}
                               </label>
                               {isChecked && <span className="text-[9px] bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400 uppercase font-mono">Assigned</span>}
@@ -1020,24 +977,8 @@ export default function LyftGymSystemMaster() {
                             
                             {isChecked && (
                               <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-zinc-900 p-1.5 rounded border border-zinc-800">
-                                <label className="flex items-center gap-1 cursor-pointer">
-                                  <input 
-                                    type="radio" 
-                                    name={`perm-${branch}`} 
-                                    checked={admPerms[branch] === 'view_only'} 
-                                    onChange={() => setAdmBranchPermLevel(branch, 'view_only')} 
-                                  />
-                                  View Only
-                                </label>
-                                <label className="flex items-center gap-1 cursor-pointer text-emerald-400 font-medium">
-                                  <input 
-                                    type="radio" 
-                                    name={`perm-${branch}`} 
-                                    checked={admPerms[branch] === 'view_edit'} 
-                                    onChange={() => setAdmBranchPermLevel(branch, 'view_edit')} 
-                                  />
-                                  View & Edit
-                                </label>
+                                <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name={`perm-${branch}`} checked={admPerms[branch] === 'view_only'} onChange={() => setAdmBranchPermLevel(branch, 'view_only')} /> View Only</label>
+                                <label className="flex items-center gap-1 cursor-pointer text-emerald-400 font-medium"><input type="radio" name={`perm-${branch}`} checked={admPerms[branch] === 'view_edit'} onChange={() => setAdmBranchPermLevel(branch, 'view_edit')} /> View & Edit</label>
                               </div>
                             )}
                           </div>
@@ -1047,9 +988,7 @@ export default function LyftGymSystemMaster() {
                   </div>
                 )}
 
-                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wide transition">
-                  Provision Admin Profile
-                </button>
+                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wide transition">Provision Admin Profile</button>
               </form>
 
               {/* Roster of active system admins */}
@@ -1061,7 +1000,10 @@ export default function LyftGymSystemMaster() {
                   {systemAdmins.map(adm => (
                     <div key={adm.id} className="p-4 hover:bg-zinc-800/10 space-y-2">
                       <div className="flex justify-between items-center">
-                        <span className="font-mono text-xs text-zinc-200 font-bold">👤 {adm.username}</span>
+                        <div>
+                          <span className="font-mono text-xs text-zinc-200 font-bold">👤 {adm.username}</span>
+                          {adm.name && <span className="text-zinc-500 text-xs block pl-5 font-sans">Name: {adm.name}</span>}
+                        </div>
                         <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${adm.access_all_locations ? 'bg-red-950/50 text-red-400 border border-red-900/40' : 'bg-zinc-950 text-zinc-400 border border-zinc-800'}`}>
                           {adm.access_all_locations ? '⭐ UNIVERSAL PRIVILEGES' : '⚓ LOCALLY RESTRICTED'}
                         </span>
