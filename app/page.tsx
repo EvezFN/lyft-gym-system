@@ -40,6 +40,7 @@ interface AdminUser {
   id: string;
   username: string;
   name?: string;
+  role?: string;
   access_all_locations: boolean;
   allowed_branches: string[];
   branch_permissions: Record<string, 'view_only' | 'view_edit'>;
@@ -143,7 +144,8 @@ export default function LyftGymSystemMaster() {
         id: data.id,
         username: data.username,
         name: data.name || data.username,
-        access_all_locations: data.access_all_locations ?? (data.username === 'admin'),
+        role: data.role || 'admin',
+        access_all_locations: data.access_all_locations ?? (data.username === 'admin' || data.role === 'admin'),
         allowed_branches: data.allowed_branches || ['Sheriff Street'],
         branch_permissions: data.branch_permissions || { 'Sheriff Street': 'view_edit' }
       };
@@ -188,7 +190,7 @@ export default function LyftGymSystemMaster() {
 
     // 4. If Super Admin, fetch all admin configurations
     if (currentUser?.access_all_locations) {
-      const { data: admData } = await supabase.from('system_users').select('id, username, name, access_all_locations, allowed_branches, branch_permissions');
+      const { data: admData } = await supabase.from('system_users').select('id, username, name, role, access_all_locations, allowed_branches, branch_permissions');
       if (admData) setSystemAdmins(admData);
     }
   };
@@ -216,16 +218,18 @@ export default function LyftGymSystemMaster() {
     setAdmPerms({ ...admPerms, [branch]: level });
   };
 
-  // Create Restricted / Universal Admin Account with Name mapping fixed
+  // Create Restricted / Universal Admin Account with Name and Role mapping fixed
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!admUsername || !admPassword || !admName) return alert('Provide full name, username, and password');
     if (!admAccessAll && admBranches.length === 0) return alert('Select at least one allowed branch or choose Universal Access.');
 
+    // FIXED: role: 'admin' added to the insertion payload to resolve the NOT NULL constraint error.
     const { error } = await supabase.from('system_users').insert([{
       name: admName.trim(),
       username: admUsername.toLowerCase().trim(),
       password: admPassword,
+      role: 'admin', 
       access_all_locations: admAccessAll,
       allowed_branches: admAccessAll ? allBranches : admBranches,
       branch_permissions: admAccessAll 
@@ -289,7 +293,7 @@ export default function LyftGymSystemMaster() {
     reader.readAsDataURL(file);
   };
 
-  // Member Registration Handler with Photo Enforcment
+  // Member Registration Handler with Photo Enforcement
   const handleRegisterMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
@@ -926,7 +930,7 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 7: PER-LOCATION PRIVILEGED ADMIN USER PROVISIONING (FIXED WITH FULL NAME) */}
+          {/* TAB 7: PRIVILEGED ADMIN USER PROVISIONING */}
           {activeTab === 'admin_mgmt' && currentUser?.access_all_locations && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
               
@@ -937,7 +941,6 @@ export default function LyftGymSystemMaster() {
                   <p className="text-xs text-zinc-500">Configure separate localized access matrices and roles.</p>
                 </div>
 
-                {/* FIXED SOLUTION: NEW MANDATORY INPUT TO SATISFY SQL NOT-NULL COLUMN CONSTRAINT */}
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1">Full Real Name</label>
                   <input type="text" value={admName} onChange={(e) => setAdmName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-2.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500" placeholder="Jane Smith" required />
@@ -1003,6 +1006,7 @@ export default function LyftGymSystemMaster() {
                         <div>
                           <span className="font-mono text-xs text-zinc-200 font-bold">👤 {adm.username}</span>
                           {adm.name && <span className="text-zinc-500 text-xs block pl-5 font-sans">Name: {adm.name}</span>}
+                          {adm.role && <span className="text-zinc-500 text-[11px] block pl-5 font-mono">Role Key: {adm.role}</span>}
                         </div>
                         <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${adm.access_all_locations ? 'bg-red-950/50 text-red-400 border border-red-900/40' : 'bg-zinc-950 text-zinc-400 border border-zinc-800'}`}>
                           {adm.access_all_locations ? '⭐ UNIVERSAL PRIVILEGES' : '⚓ LOCALLY RESTRICTED'}
