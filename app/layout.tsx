@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { createClient } from "../utils/supabase/server";
+// Corrected relative path to look inside your app directory structure
+import { createClient } from "./utils/supabase";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
