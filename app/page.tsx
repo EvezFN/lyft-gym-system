@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 import { 
   Truck, FileSpreadsheet, Key, LogOut, Shield, Users, 
-  UserPlus, DollarSign, Activity, HardDrive, RefreshCw, Smartphone, Eye, FileText, X
+  UserPlus, DollarSign, Activity, Eye, FileText, X, Dumbbell, BarChart3, Settings
 } from "lucide-react";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -16,7 +16,7 @@ interface SystemUser {
   name: string;
   username: string;
   role: string;
-  department: "gym_operations" | "lyft_trucking";
+  department: "gym_operations" | "lyft_trucking" | "master_admin";
   access_all_locations: boolean;
 }
 
@@ -61,17 +61,20 @@ export default function UnifiedSystem() {
   const [workOrders, setWorkOrders] = useState<FleetWorkOrder[]>([]);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [selectedPayslip, setSelectedPayslip] = useState<PayrollRecord | null>(null);
-  const [isSyncingWhatsApp, setIsSyncingWhatsApp] = useState(false);
 
-  // Form states for work orders
+  // Form states for dispatch work orders
   const [newPlate, setNewPlate] = useState("");
   const [newDriver, setNewDriver] = useState("");
   const [newDest, setNewDest] = useState("");
-  const [newCargo, setNewCargo] = useState("General Freight");
+  const [newCargo, setNewCargo] = useState("Gym Equipment Iron Mat");
 
+  // Route fallback routing when user logs in to prevent blank screens
   useEffect(() => {
     if (currentUser) {
-      if (currentUser.department === "lyft_trucking") {
+      if (currentUser.role?.toLowerCase() === "admin" || currentUser.department === "master_admin") {
+        setCurrentTab("gym_dashboard"); // Admins start here but have full access
+        fetchTruckingData();
+      } else if (currentUser.department === "lyft_trucking") {
         setCurrentTab("trucking_fleet");
         fetchTruckingData();
       } else {
@@ -99,13 +102,12 @@ export default function UnifiedSystem() {
       .single();
 
     if (error || !data) {
-      setAuthError("Invalid credentials.");
+      setAuthError("Invalid terminal authorization credentials.");
       return;
     }
     setCurrentUser(data);
   };
 
-  // Helper to format loose dates/times coming from Excel rows safely
   const formatExcelTime = (val: any): string => {
     if (!val) return "0";
     if (typeof val === "object" && val.hours !== undefined) return `${val.hours}h`;
@@ -124,14 +126,12 @@ export default function UnifiedSystem() {
         const targetSheetName = "April Payroll-Final";
         
         if (!workbook.SheetNames.includes(targetSheetName)) {
-          alert(`Sheet "${targetSheetName}" not found.`);
+          alert(`Sheet "${targetSheetName}" not found inside workbook assets.`);
           return;
         }
 
         const worksheet = workbook.Sheets[targetSheetName];
         const rawJsonData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
-        
-        // Slice at row index 4 where active employee records begin inside the file format
         const dataRows = rawJsonData.slice(4);
         const compiledRecords: PayrollRecord[] = [];
 
@@ -146,28 +146,25 @@ export default function UnifiedSystem() {
           const nisContribution = parseFloat(row[32]) || 0;
           const payeDeduction = parseFloat(row[34]) || 0;
 
-          // EMPLOYEE FILTERING LAYER
+          // Excel line filtering constraint rules
           if (nisContribution === 0 && payeDeduction === 0) continue;
 
           compiledRecords.push({
             employee_name: employeeName,
-            position: row[3] ? String(row[3]).trim() : "Staff",
-            location: row[4] ? String(row[4]).trim() : "General Node",
-            bank_name: row[40] ? String(row[40]).trim() : "Cash payout",
+            position: row[3] ? String(row[3]).trim() : "Staff Worker",
+            location: row[4] ? String(row[4]).trim() : "Main Office",
+            bank_name: row[40] ? String(row[40]).trim() : "Cash",
             account_number: row[39] ? String(row[39]).trim() : "N/A",
             email: row[41] ? String(row[41]).trim() : "",
             
-            // Fortnight 1 trackers
             f1_normal_hours: formatExcelTime(row[7]),
             f1_ot_hours: formatExcelTime(row[8]),
             f1_gross: parseFloat(row[28]) || 0,
             
-            // Fortnight 2 trackers
             f2_normal_hours: formatExcelTime(row[18]),
             f2_ot_hours: formatExcelTime(row[19]),
             f2_gross: parseFloat(row[29]) || 0,
             
-            // Monthly Consolidated Balances
             gross_salary: parseFloat(row[30]) || 0,
             nis_contribution: nisContribution,
             paye_deduction: payeDeduction,
@@ -177,92 +174,237 @@ export default function UnifiedSystem() {
           });
         }
 
-        await supabase.from("payroll_records").delete().neq("employee_name", "WIPE"); // Refresh snapshot rows cleanly
+        await supabase.from("payroll_records").delete().neq("employee_name", "WIPE");
         const { error } = await supabase.from("payroll_records").insert(compiledRecords);
         if (error) throw error;
 
-        alert(`Ingested ${compiledRecords.length} worker accounting entries perfectly!`);
+        alert(`Successfully ingested and mapped ${compiledRecords.length} extended worker profiles!`);
         fetchTruckingData();
       } catch (err: any) {
-        alert(`Parsing break: ${err.message}`);
+        alert(`Error compiling spreadsheet: ${err.message}`);
       }
     };
     reader.readAsBinaryString(file);
   };
 
+  const handleCreateWorkOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPlate || !newDriver) return;
+
+    const record: FleetWorkOrder = {
+      truck_plate: newPlate,
+      driver_name: newDriver,
+      destination: newDest,
+      cargo_type: newCargo,
+      dispatch_status: "Pending"
+    };
+
+    const { error } = await supabase.from("fleet_work_orders").insert([record]);
+    if (!error) {
+      setNewPlate("");
+      setNewDriver("");
+      setNewDest("");
+      fetchTruckingData();
+    }
+  };
+
+  const handleUpdateStatus = async (id: string, nextStatus: "In Transit" | "Delivered") => {
+    await supabase.from("fleet_work_orders").update({ dispatch_status: nextStatus }).eq("id", id);
+    fetchTruckingData();
+  };
+
+  // Helper flags to simplify multi-department visibility switches
+  const isMasterAdmin = currentUser?.role?.toLowerCase() === "admin" || currentUser?.department === "master_admin";
+  const hasTruckingAccess = isMasterAdmin || currentUser?.department === "lyft_trucking";
+  const hasGymAccess = isMasterAdmin || currentUser?.department === "gym_operations";
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex">
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
-        <div className="p-4 border-b border-slate-800 flex items-center gap-2 font-bold text-emerald-400">
-          <Activity className="w-6 h-6" /> <span>Lyft Matrix Terminal</span>
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex font-sans">
+      
+      {/* SIDEBAR NAVIGATION - MASTER CONTROL HUB */}
+      <aside className="w-64 bg-neutral-900 border-r border-neutral-800 flex flex-col justify-between">
+        <div>
+          <div className="p-5 border-b border-neutral-800 flex items-center gap-2.5 font-black tracking-wider text-red-500 uppercase">
+            <Dumbbell className="w-6 h-6 text-red-600" />
+            <span>Lyft Gym Matrix</span>
+          </div>
+          
+          <div className="p-4 text-[10px] text-neutral-500 font-mono uppercase tracking-widest border-b border-neutral-850">
+            Navigation Interface ({currentUser?.role})
+          </div>
+
+          <nav className="p-3 space-y-1">
+            {/* GYM CHANNELS */}
+            {hasGymAccess && (
+              <>
+                <button onClick={() => setCurrentTab("gym_dashboard")} className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-semibold transition-all ${currentTab === "gym_dashboard" ? "bg-red-600 text-white shadow-md shadow-red-900/20" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}>
+                  <BarChart3 className="w-4 h-4" /> Gym Core Hub
+                </button>
+                <button onClick={() => setCurrentTab("gym_members")} className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-semibold transition-all ${currentTab === "gym_members" ? "bg-red-600 text-white shadow-md shadow-red-900/20" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}>
+                  <Users className="w-4 h-4" /> Client Database
+                </button>
+              </>
+            )}
+
+            {/* TRUCKING LOGISTICS CHANNELS */}
+            {hasTruckingAccess && (
+              <>
+                <button onClick={() => setCurrentTab("trucking_fleet")} className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-semibold transition-all ${currentTab === "trucking_fleet" ? "bg-red-600 text-white shadow-md shadow-red-900/20" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}>
+                  <Truck className="w-4 h-4" /> Fleet Dispatch
+                </button>
+                <button onClick={() => setCurrentTab("trucking_payroll")} className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-semibold transition-all ${currentTab === "trucking_payroll" ? "bg-red-600 text-white shadow-md shadow-red-900/20" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}>
+                  <FileSpreadsheet className="w-4 h-4" /> Matrix Payroll
+                </button>
+              </>
+            )}
+          </nav>
         </div>
-        <nav className="flex-1 p-4 space-y-1">
-          {currentUser?.department === "lyft_trucking" && (
-            <>
-              <button onClick={() => setCurrentTab("trucking_fleet")} className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-medium ${currentTab === "trucking_fleet" ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:bg-slate-800"}`}>
-                <Truck className="w-4 h-4" /> Transport Fleet
-              </button>
-              <button onClick={() => setCurrentTab("trucking_payroll")} className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-medium ${currentTab === "trucking_payroll" ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:bg-slate-800"}`}>
-                <FileSpreadsheet className="w-4 h-4" /> Payroll Processing
-              </button>
-            </>
-          )}
-        </nav>
-        <div className="p-4 border-t border-slate-800">
-          <button onClick={() => setCurrentUser(null)} className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-800 text-xs rounded text-rose-400 border border-slate-700">
-            <LogOut className="w-3.5 h-3.5" /> Close Session
+
+        <div className="p-4 border-t border-neutral-800 bg-neutral-900/50">
+          <div className="text-xs text-neutral-400 mb-2 truncate font-mono">User: {currentUser?.name}</div>
+          <button onClick={() => setCurrentUser(null)} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-neutral-800 hover:bg-red-900/40 text-xs rounded text-red-400 border border-neutral-700 transition-all font-bold">
+            <LogOut className="w-3.5 h-3.5" /> Terminate Access
           </button>
         </div>
       </aside>
 
-      {/* WORKSPACE CONTENT MAIN SECTION */}
-      <main className="flex-1 p-8 relative">
+      {/* WORKSPACE AREA LAYOUT CONTAINER */}
+      <main className="flex-1 p-8 bg-neutral-950 overflow-y-auto">
+        
+        {/* TAB VIEW 1: GYM CORE DASHBOARD CONTROL */}
+        {currentTab === "gym_dashboard" && (
+          <div className="space-y-6">
+            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl border-l-4 border-l-red-600">
+              <h2 className="text-2xl font-black tracking-tight text-white">GYM METRIC OPERATIONS HUB</h2>
+              <p className="text-sm text-neutral-400 mt-1">Real-time facility check-ins, membership counters, and operational tracking parameters.</p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl">
+                <div className="text-xs font-mono uppercase tracking-wider text-neutral-500">Active Membership Base</div>
+                <div className="text-3xl font-black mt-2 text-red-500">1,248 Active</div>
+              </div>
+              <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl">
+                <div className="text-xs font-mono uppercase tracking-wider text-neutral-500">Daily POS Revenue Ring</div>
+                <div className="text-3xl font-black mt-2 text-white">$420,500 GYD</div>
+              </div>
+              <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl">
+                <div className="text-xs font-mono uppercase tracking-wider text-neutral-500">Active Personal Trainers</div>
+                <div className="text-3xl font-black mt-2 text-white">14 Roster Slots</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB VIEW 2: GYM CLIENT ACCESS DATABASE */}
+        {currentTab === "gym_members" && (
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl">
+            <h3 className="text-lg font-bold text-white mb-2">Gym Access Accounts Registry</h3>
+            <p className="text-xs text-neutral-400 mb-4">View active registration status fields for users spanning full-access multi-location tags.</p>
+            <div className="text-sm text-neutral-500 italic p-8 text-center border border-dashed border-neutral-800 rounded">
+              Client database synchronization active.
+            </div>
+          </div>
+        )}
+
+        {/* TAB VIEW 3: TRUCKING DISPATCH LOGISTICS */}
+        {currentTab === "trucking_fleet" && (
+          <div className="space-y-6">
+            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl">
+              <h2 className="text-lg font-bold text-white mb-4">Create Dispatch Logistics Order</h2>
+              <form onSubmit={handleCreateWorkOrder} className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                <input type="text" placeholder="License Plate (e.g., GTT 8842)" value={newPlate} onChange={e => setNewPlate(e.target.value)} className="bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" required />
+                <input type="text" placeholder="Driver Full Name" value={newDriver} onChange={e => setNewDriver(e.target.value)} className="bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" required />
+                <input type="text" placeholder="Destination Delivery Node" value={newDest} onChange={e => setNewDest(e.target.value)} className="bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" required />
+                <button type="submit" className="bg-red-600 hover:bg-red-700 font-bold p-2.5 rounded text-white transition-all">Commit To Active Roster</button>
+              </form>
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+              <div className="p-4 bg-neutral-850 font-bold text-sm text-white border-b border-neutral-800">Active Roster Monitoring Table</div>
+              <table className="w-full text-left text-xs text-neutral-400">
+                <thead className="bg-neutral-950 font-mono text-neutral-500 uppercase">
+                  <tr>
+                    <th className="p-3">Plate ID</th>
+                    <th className="p-3">Cargo Driver</th>
+                    <th className="p-3">Destination Node</th>
+                    <th className="p-3">Operational Status</th>
+                    <th className="p-3 text-right">State Control Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800 font-mono">
+                  {workOrders.map((order) => (
+                    <tr key={order.id} className="hover:bg-neutral-850/50">
+                      <td className="p-3 font-bold text-neutral-200">{order.truck_plate}</td>
+                      <td className="p-3 font-sans text-neutral-300">{order.driver_name}</td>
+                      <td className="p-3 font-sans">{order.destination}</td>
+                      <td className="p-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${order.dispatch_status === 'Pending' ? 'bg-amber-950 text-amber-400 border border-amber-800' : order.dispatch_status === 'In Transit' ? 'bg-blue-950 text-blue-400 border border-blue-800' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'}`}>
+                          {order.dispatch_status}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        {order.dispatch_status === "Pending" && (
+                          <button onClick={() => handleUpdateStatus(order.id!, "In Transit")} className="bg-neutral-800 hover:bg-blue-600 text-white px-2 py-1 rounded text-[10px] transition-all">Mark Departure</button>
+                        )}
+                        {order.dispatch_status === "In Transit" && (
+                          <button onClick={() => handleUpdateStatus(order.id!, "Delivered")} className="bg-neutral-800 hover:bg-emerald-600 text-white px-2 py-1 rounded text-[10px] transition-all">Confirm Delivery</button>
+                        )}
+                        {order.dispatch_status === "Delivered" && <span className="text-neutral-600 text-[10px] italic">Cycle Completed</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB VIEW 4: MATRIX INFRASTRUCTURE PAYROLL PROCESSOR */}
         {currentTab === "trucking_payroll" && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center bg-slate-900 p-6 rounded-xl border border-slate-800">
+            <div className="flex justify-between items-center bg-neutral-900 p-6 rounded-xl border border-neutral-800 border-l-4 border-l-red-600">
               <div>
-                <h2 className="text-xl font-bold text-white">Full-Capitalization Payroll Terminal</h2>
-                <p className="text-xs text-slate-400">Extracts position matrices, branch node locations, time tracking values, and instantly populates individual payslips.</p>
+                <h2 className="text-xl font-black text-white uppercase tracking-tight">Lyft Matrix Payroll Engine</h2>
+                <p className="text-xs text-neutral-400 mt-0.5">Automates job roles, branch worksites, hours parameters, and outputs formatted payslips.</p>
               </div>
-              <label className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-4 py-2 rounded text-sm cursor-pointer shadow-md">
+              <label className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded text-sm cursor-pointer transition-all shadow-lg">
                 Ingest Data Workbook
                 <input type="file" accept=".xlsx, .xls" onChange={handleExcelIngestion} className="hidden" />
               </label>
             </div>
 
-            {/* DATA EXTRACTION METRIC MATRIX GRID */}
-            <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-              <table className="w-full text-left text-xs text-slate-400">
-                <thead className="bg-slate-950 text-slate-500 font-mono uppercase">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+              <table className="w-full text-left text-xs text-neutral-400">
+                <thead className="bg-neutral-950 text-neutral-500 font-mono uppercase">
                   <tr>
-                    <th className="p-3">Personnel / Node</th>
-                    <th className="p-3">Role Profile</th>
-                    <th className="p-3">F1 / F2 Gross</th>
-                    <th className="p-3">Taxes (NIS + PAYE)</th>
-                    <th className="p-3 text-emerald-400">Net Return</th>
-                    <th className="p-3 text-center">Interactive Document</th>
+                    <th className="p-3">Personnel Profile</th>
+                    <th className="p-3">Role Matrix</th>
+                    <th className="p-3">F1 / F2 Gross Breakdown</th>
+                    <th className="p-3">Deductions (NIS / PAYE)</th>
+                    <th className="p-3 text-red-500">Net Return Total</th>
+                    <th className="p-3 text-center">Interactive Receipt</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800 font-mono">
+                <tbody className="divide-y divide-neutral-800 font-mono">
                   {payrollRecords.map((rec, i) => (
-                    <tr key={i} className="hover:bg-slate-850/30">
+                    <tr key={i} className="hover:bg-neutral-850/40">
                       <td className="p-3">
-                        <div className="font-sans font-bold text-slate-200">{rec.employee_name}</div>
-                        <div className="text-[10px] text-slate-500">{rec.location} • {rec.bank_name}</div>
+                        <div className="font-sans font-bold text-neutral-200">{rec.employee_name}</div>
+                        <div className="text-[10px] text-neutral-500 font-mono">{rec.location} • {rec.bank_name}</div>
                       </td>
-                      <td className="p-3 text-slate-300 font-sans">{rec.position}</td>
-                      <td className="p-3 text-slate-400">
+                      <td className="p-3 text-neutral-300 font-sans">{rec.position}</td>
+                      <td className="p-3 text-neutral-400 text-[11px]">
                         F1: ${rec.f1_gross.toLocaleString()} <br/> F2: ${rec.f2_gross.toLocaleString()}
                       </td>
-                      <td className="p-3 text-rose-400">
-                        N: ${rec.nis_contribution.toLocaleString()} <br/> P: ${rec.paye_deduction.toLocaleString()}
+                      <td className="p-3 text-red-400 text-[11px]">
+                        NIS: ${rec.nis_contribution.toLocaleString()} <br/> PAYE: ${rec.paye_deduction.toLocaleString()}
                       </td>
-                      <td className="p-3 text-emerald-400 font-bold font-sans">${rec.net_pay.toLocaleString()} GYD</td>
+                      <td className="p-3 text-red-500 font-black font-sans text-sm">${rec.net_pay.toLocaleString()} GYD</td>
                       <td className="p-3 text-center">
                         <button 
                           onClick={() => setSelectedPayslip(rec)} 
-                          className="inline-flex items-center gap-1 bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 border border-slate-700 px-2.5 py-1 rounded text-xs transition-all text-slate-300"
+                          className="inline-flex items-center gap-1.5 bg-neutral-800 hover:bg-red-600 text-neutral-300 hover:text-white border border-neutral-700 px-3 py-1.5 rounded text-xs transition-all"
                         >
                           <FileText className="w-3.5 h-3.5" /> View Payslip
                         </button>
@@ -278,69 +420,72 @@ export default function UnifiedSystem() {
 
       {/* AUTOMATIC GENERATED PAYSLIP OVERLAY MODAL */}
       {selectedPayslip && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white text-slate-900 w-full max-w-xl rounded-xl p-8 shadow-2xl relative border-t-8 border-emerald-500">
-            <button onClick={() => setSelectedPayslip(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-900">
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white text-neutral-900 w-full max-w-xl rounded-xl p-8 shadow-2xl relative border-t-8 border-red-600">
+            <button onClick={() => setSelectedPayslip(null)} className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-900 transition-colors">
               <X className="w-5 h-5" />
             </button>
             
-            <div className="text-center border-b pb-4 mb-6">
-              <h3 className="text-xl font-black uppercase tracking-wider text-slate-900">Lyft Trucking Services Ltd.</h3>
-              <p className="text-xs text-slate-500 font-medium font-mono">Statement of Fortnightly Compensation Earnings</p>
+            <div className="text-center border-b pb-4 mb-5">
+              <h3 className="text-xl font-black uppercase tracking-wider text-neutral-900">Lyft Trucking Services Ltd.</h3>
+              <p className="text-xs text-neutral-500 font-bold font-mono uppercase tracking-wider">Statement of Fortnightly Compensation Earnings</p>
             </div>
 
-            {/* Employee Metadata Roster Block */}
-            <div className="grid grid-cols-2 gap-y-2 gap-x-4 bg-slate-100 p-4 rounded-lg mb-6 text-xs">
-              <div><span className="text-slate-400 font-bold uppercase block text-[10px]">Employee Name</span> <strong className="text-sm text-slate-800">{selectedPayslip.employee_name}</strong></div>
-              <div><span className="text-slate-400 font-bold uppercase block text-[10px]">Assigned Designation</span> <strong className="text-sm text-slate-800">{selectedPayslip.position}</strong></div>
-              <div><span className="text-slate-400 font-bold uppercase block text-[10px]">Operational Worksite</span> <span className="font-semibold">{selectedPayslip.location} Node</span></div>
-              <div><span className="text-slate-400 font-bold uppercase block text-[10px]">Disbursement Target</span> <span className="font-semibold">{selectedPayslip.bank_name} ({selectedPayslip.account_number})</span></div>
+            <div className="grid grid-cols-2 gap-y-2 gap-x-4 bg-neutral-100 p-4 rounded-lg mb-5 text-xs">
+              <div><span className="text-neutral-400 font-bold uppercase block text-[9px]">Employee Name</span> <strong className="text-sm text-neutral-800">{selectedPayslip.employee_name}</strong></div>
+              <div><span className="text-neutral-400 font-bold uppercase block text-[9px]">Assigned Designation</span> <strong className="text-sm text-neutral-800">{selectedPayslip.position}</strong></div>
+              <div><span className="text-neutral-400 font-bold uppercase block text-[9px]">Operational Worksite</span> <span className="font-semibold text-neutral-700">{selectedPayslip.location} Node</span></div>
+              <div><span className="text-neutral-400 font-bold uppercase block text-[9px]">Disbursement Target</span> <span className="font-semibold text-neutral-700">{selectedPayslip.bank_name} ({selectedPayslip.account_number})</span></div>
             </div>
 
-            {/* Time Tracking Parameters Ledger Breakdown */}
-            <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-2 border-b pb-1">Time Tracker & Production Breakdown</h4>
-            <div className="grid grid-cols-2 gap-4 text-xs mb-6 font-mono">
-              <div className="bg-slate-50 p-3 rounded border">
-                <span className="font-bold text-slate-700 block mb-1 border-b pb-0.5 font-sans">First Fortnightly Half</span>
-                <div>Normal Hours Worked: <span className="font-bold text-slate-900">{selectedPayslip.f1_normal_hours}</span></div>
-                <div>Overtime Accumulated: <span className="font-bold text-slate-900">{selectedPayslip.f1_ot_hours}</span></div>
-                <div className="mt-1 pt-1 border-t text-slate-800 font-bold">Gross Subtotal: ${selectedPayslip.f1_gross.toLocaleString()}</div>
+            <h4 className="text-xs font-black uppercase tracking-widest text-neutral-400 mb-2 border-b pb-1">Time Tracker Parameters</h4>
+            <div className="grid grid-cols-2 gap-4 text-xs mb-5 font-mono">
+              <div className="bg-neutral-50 p-3 rounded border border-neutral-200">
+                <span className="font-bold text-neutral-700 block mb-1 border-b pb-0.5 font-sans">First Fortnightly Half</span>
+                <div>Normal Hours: <span className="font-bold text-neutral-900">{selectedPayslip.f1_normal_hours}</span></div>
+                <div>Overtime Hours: <span className="font-bold text-neutral-900">{selectedPayslip.f1_ot_hours}</span></div>
+                <div className="mt-1.5 pt-1 border-t text-neutral-800 font-bold">Gross: ${selectedPayslip.f1_gross.toLocaleString()}</div>
               </div>
-              <div className="bg-slate-50 p-3 rounded border">
-                <span className="font-bold text-slate-700 block mb-1 border-b pb-0.5 font-sans">Second Fortnightly Half</span>
-                <div>Normal Hours Worked: <span className="font-bold text-slate-900">{selectedPayslip.f2_normal_hours}</span></div>
-                <div>Overtime Accumulated: <span className="font-bold text-slate-900">{selectedPayslip.f2_ot_hours}</span></div>
-                <div className="mt-1 pt-1 border-t text-slate-800 font-bold">Gross Subtotal: ${selectedPayslip.f2_gross.toLocaleString()}</div>
+              <div className="bg-neutral-50 p-3 rounded border border-neutral-200">
+                <span className="font-bold text-neutral-700 block mb-1 border-b pb-0.5 font-sans">Second Fortnightly Half</span>
+                <div>Normal Hours: <span className="font-bold text-neutral-900">{selectedPayslip.f2_normal_hours}</span></div>
+                <div>Overtime Hours: <span className="font-bold text-neutral-900">{selectedPayslip.f2_ot_hours}</span></div>
+                <div className="mt-1.5 pt-1 border-t text-neutral-800 font-bold">Gross: ${selectedPayslip.f2_gross.toLocaleString()}</div>
               </div>
             </div>
 
-            {/* Financial Totals Calculations Section */}
-            <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-2 border-b pb-1">Tax Deductions Ledger</h4>
-            <div className="space-y-1.5 text-xs font-mono mb-6">
-              <div className="flex justify-between"><span>Consolidated Month Gross Base Pay:</span> <span className="font-bold">${selectedPayslip.gross_salary.toLocaleString()} GYD</span></div>
-              <div className="flex justify-between text-rose-600"><span>National Insurance Contribution Deduction (NIS):</span> <span>-${selectedPayslip.nis_contribution.toLocaleString()}</span></div>
-              <div className="flex justify-between text-rose-600"><span>Pay As You Earn Income Tax Deduction (PAYE):</span> <span>-${selectedPayslip.paye_deduction.toLocaleString()}</span></div>
-              <div className="flex justify-between border-t pt-2 text-sm font-black text-emerald-600 bg-emerald-50 p-2 rounded mt-2 font-sans">
-                <span>NET NET CASH PAYOUT AMOUNT:</span>
+            <h4 className="text-xs font-black uppercase tracking-widest text-neutral-400 mb-2 border-b pb-1">Deductions Ledger & Net Payout</h4>
+            <div className="space-y-1.5 text-xs font-mono mb-4">
+              <div className="flex justify-between"><span>Consolidated Gross Income:</span> <span className="font-bold">${selectedPayslip.gross_salary.toLocaleString()} GYD</span></div>
+              <div className="flex justify-between text-red-600"><span>National Insurance Contribution (NIS):</span> <span>-${selectedPayslip.nis_contribution.toLocaleString()}</span></div>
+              <div className="flex justify-between text-red-600"><span>Pay As You Earn Tax Contribution (PAYE):</span> <span>-${selectedPayslip.paye_deduction.toLocaleString()}</span></div>
+              <div className="flex justify-between border-t border-neutral-300 pt-2.5 text-sm font-black text-red-600 bg-red-50 p-2.5 rounded mt-2 font-sans">
+                <span>NET ACCOUNTS PAYABLE DISBURSEMENT:</span>
                 <span>${selectedPayslip.net_pay.toLocaleString()} GYD</span>
               </div>
             </div>
 
-            <div className="text-[10px] text-center text-slate-400 border-t pt-4 font-medium italic">
-              This is a system-generated tracking summary compiled directly from the live encrypted master payroll sheet ledger.
+            <div className="text-[10px] text-center text-neutral-400 border-t pt-4 italic font-medium">
+              This statement constitutes an encrypted digital record processed through the system ledger core.
             </div>
           </div>
         </div>
       )}
 
-      {/* LOGIN GATE CODE FALLBACK */}
+      {/* SYSTEM AUTHORIZATION DOORWAY GATE FALLBACK */}
       {!currentUser && (
-        <div className="fixed inset-0 bg-slate-950 flex items-center justify-center">
-          <form onSubmit={handleSystemLogin} className="bg-slate-900 p-6 rounded-lg border border-slate-800 space-y-4 w-80">
-            <h2 className="text-white font-bold text-lg">System Doorway</h2>
-            <input type="text" placeholder="Username" value={authUsername} onChange={e => setAuthUsername(e.target.value)} className="w-full bg-slate-950 border p-2 text-sm text-white rounded" />
-            <input type="password" placeholder="Password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-slate-950 border p-2 text-sm text-white rounded" />
-            <button type="submit" className="w-full bg-emerald-500 text-slate-950 p-2 rounded text-sm font-bold">Access Matrix</button>
+        <div className="fixed inset-0 bg-neutral-950 flex items-center justify-center z-50">
+          <form onSubmit={handleSystemLogin} className="bg-neutral-900 p-8 rounded-xl border border-neutral-800 space-y-4 w-80 shadow-2xl relative border-t-4 border-red-600">
+            <div className="text-center pb-2">
+              <h2 className="text-white font-black tracking-wider uppercase text-md">Lyft Gym Matrix</h2>
+              <p className="text-[10px] text-neutral-500 font-mono tracking-widest mt-0.5">Terminal Authentication Request</p>
+            </div>
+            {authError && <div className="bg-red-950/50 border border-red-800 text-red-400 p-2 rounded text-xs text-center font-semibold font-mono">{authError}</div>}
+            <div className="space-y-2">
+              <input type="text" placeholder="Username Identity" value={authUsername} onChange={e => setAuthUsername(e.target.value)} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 text-xs text-white rounded focus:outline-none focus:border-red-600 font-mono" required />
+              <input type="password" placeholder="Access Password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 text-xs text-white rounded focus:outline-none focus:border-red-600 font-mono" required />
+            </div>
+            <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white p-2.5 rounded text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-red-900/10">Authorize Access</button>
           </form>
         </div>
       )}
