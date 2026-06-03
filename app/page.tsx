@@ -1,9 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from './utils/supabase';
+// Keeps your native path shortcuts fully intact
+import { supabase } from '@/app/utils/supabase';
+import * as XLSX from 'xlsx';
 
-// Data Typing Models
+// ==========================================
+// DATA TYPING MODELS
+// ==========================================
 interface Member {
   id: string;
   name: string;
@@ -16,7 +20,7 @@ interface Member {
   address: string;
   goal: string;
   assigned_trainer: string;
-  photo?: string; // Stored as high-fidelity Base64 URI string
+  photo?: string; 
 }
 
 interface InventoryItem {
@@ -41,34 +45,68 @@ interface AdminUser {
   username: string;
   name?: string;
   role?: string;
+  department: 'gym_operations' | 'lyft_trucking';
   access_all_locations: boolean;
   allowed_branches: string[];
   branch_permissions: Record<string, 'view_only' | 'view_edit'>;
 }
 
-export default function LyftGymSystemMaster() {
-  // Navigation & Authentication
+interface FleetWorkOrder {
+  id: string;
+  truck_plate: string;
+  driver_name: string;
+  destination: string;
+  cargo_type: string;
+  dispatch_status: 'Pending' | 'In Transit' | 'Delivered';
+  created_at: string;
+}
+
+interface PayrollRecord {
+  id: string;
+  employee_name: string;
+  gross_salary: number;
+  nis_contribution: number;
+  paye_deduction: number;
+  net_pay: number;
+  payment_frequency: string;
+  payroll_cycle_date: string;
+}
+
+export default function LyftNetworkMasterControl() {
+  // Navigation & Session Access Authentication
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
-  const [activeTab, setActiveTab] = useState<'members' | 'register' | 'pos' | 'inventory' | 'trainers' | 'analytics' | 'admin_mgmt'>('members');
   
-  // Guyana Branch System Configuration Selection Index
+  // Dynamic Tab Switchboard
+  const [activeTab, setActiveTab] = useState<'members' | 'register' | 'pos' | 'inventory' | 'trainers' | 'trucking_fleet' | 'trucking_payroll' | 'admin_mgmt'>('members');
+  
+  // Comprehensive Regional Branch Pool Configuration Index
   const allBranches = ['Sheriff Street', 'Main Street', 'Tower', 'Skeldon', 'Diamond', 'Canje', 'Mahaica', 'Vreed en Hoop'];
   const [selectedBranch, setSelectedBranch] = useState('Sheriff Street');
 
-  // Core Data Arrays
+  // Core Gym State Buckets
   const [members, setMembers] = useState<Member[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [systemAdmins, setSystemAdmins] = useState<AdminUser[]>([]);
-
-  // Real-Time Search Filter State
   const [memberSearch, setMemberSearch] = useState('');
 
-  // Expanded Registration Form States
+  // Core Trucking State Buckets
+  const [workOrders, setWorkOrders] = useState<FleetWorkOrder[]>([]);
+  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [excelLoading, setExcelLoading] = useState(false);
+
+  // New Fleet Work Order Form States
+  const [newPlate, setNewPlate] = useState('');
+  const [newDriver, setNewDriver] = useState('');
+  const [newDest, setNewDest] = useState('');
+  const [newCargo, setNewCargo] = useState('');
+
+  // Expanded Gym Registration Form States
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<'Regular' | 'VIP'>('Regular');
   const [newCard, setNewCard] = useState('');
@@ -98,10 +136,11 @@ export default function LyftGymSystemMaster() {
   const [invStock, setInvStock] = useState<number>(50);
   const [invPrice, setInvPrice] = useState<number>(1500); 
 
-  // New Admin User Registration Configuration States
+  // New Admin User Configuration States
   const [admName, setAdmName] = useState('');
   const [admUsername, setAdmUsername] = useState('');
   const [admPassword, setAdmPassword] = useState('');
+  const [admDept, setAdmDept] = useState<'gym_operations' | 'lyft_trucking'>('gym_operations');
   const [admAccessAll, setAdmAccessAll] = useState(false);
   const [admBranches, setAdmBranches] = useState<string[]>([]);
   const [admPerms, setAdmPerms] = useState<Record<string, 'view_only' | 'view_edit'>>({});
@@ -111,10 +150,10 @@ export default function LyftGymSystemMaster() {
   const [calcMemory, setCalcMemory] = useState<string | null>(null);
   const [calcOp, setCalcOp] = useState<string | null>(null);
 
-  // Enlarged Photo Viewer Modal State
+  // Image Preview Modal State
   const [previewPhotoModal, setPreviewPhotoModal] = useState<string | null>(null);
 
-  // Compute Dynamic Operational Access matrix for current user on active branch
+  // Dynamic Operational Permissions Evaluations
   const canEditCurrentBranch = currentUser?.access_all_locations || 
     (currentUser?.branch_permissions?.[selectedBranch] === 'view_edit');
 
@@ -122,7 +161,7 @@ export default function LyftGymSystemMaster() {
     ? allBranches 
     : (currentUser?.allowed_branches || []);
 
-  // Handle Login Authentication with Permission Matrix Loadouts
+  // Handle Authentication with System Division Loading
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -134,7 +173,7 @@ export default function LyftGymSystemMaster() {
         .single();
 
       if (error || !data || data.password !== password) {
-        setLoginError('Invalid application username or security access key.');
+        setLoginError('Invalid verification matrix login credentials.');
         return;
       }
 
@@ -143,22 +182,29 @@ export default function LyftGymSystemMaster() {
         username: data.username,
         name: data.name || data.username,
         role: data.role || 'admin',
-        access_all_locations: data.access_all_locations ?? (data.username === 'admin' || data.role === 'admin'),
+        department: data.department || 'gym_operations',
+        access_all_locations: data.access_all_locations ?? (data.username === 'admin'),
         allowed_branches: data.allowed_branches || ['Sheriff Street'],
         branch_permissions: data.branch_permissions || { 'Sheriff Street': 'view_edit' }
       };
 
       setCurrentUser(userPayload);
+      setIsLoggedIn(true);
       
+      // Auto-route workspace viewports based on internal division map
+      if (userPayload.department === 'lyft_trucking') {
+        setActiveTab('trucking_fleet');
+      } else {
+        setActiveTab('members');
+      }
+
       if (userPayload.access_all_locations) {
         setSelectedBranch('Sheriff Street');
       } else if (userPayload.allowed_branches.length > 0) {
         setSelectedBranch(userPayload.allowed_branches[0]);
       }
-
-      setIsLoggedIn(true);
     } catch (err) {
-      setLoginError('Database authentication link failed.');
+      setLoginError('Terminal pipeline handshake timeout.');
     }
   };
 
@@ -166,15 +212,13 @@ export default function LyftGymSystemMaster() {
   const refreshCoreDatabaseData = async () => {
     if (!selectedBranch) return;
 
-    // 1. Fetch Members
+    // Gym Operational Logs
     const { data: memData } = await supabase.from('members').select('*').eq('branch_location', selectedBranch);
     if (memData) setMembers(memData);
 
-    // 2. Fetch Inventory Items
     const { data: invData } = await supabase.from('inventory').select('*').eq('branch_location', selectedBranch);
     if (invData) setInventory(invData);
 
-    // 3. Fetch Trainers
     const { data: trainData } = await supabase.from('trainers').select('*').eq('branch_location', selectedBranch);
     if (trainData && trainData.length > 0) {
       setTrainers(trainData);
@@ -185,9 +229,16 @@ export default function LyftGymSystemMaster() {
       ]);
     }
 
-    // 4. If Super Admin, fetch all admin configurations
+    // Trucking Logistics Logs
+    const { data: fleetData } = await supabase.from('fleet_work_orders').select('*').order('created_at', { ascending: false });
+    if (fleetData) setWorkOrders(fleetData);
+
+    const { data: payRecords } = await supabase.from('payroll_records').select('*').order('payroll_cycle_date', { ascending: false });
+    if (payRecords) setPayrollRecords(payRecords);
+
+    // Global User Directories
     if (currentUser?.access_all_locations) {
-      const { data: admData } = await supabase.from('system_users').select('id, username, name, role, access_all_locations, allowed_branches, branch_permissions');
+      const { data: admData } = await supabase.from('system_users').select('id, username, name, role, department, access_all_locations, allowed_branches, branch_permissions');
       if (admData) setSystemAdmins(admData);
     }
   };
@@ -198,7 +249,7 @@ export default function LyftGymSystemMaster() {
     }
   }, [selectedBranch, isLoggedIn]);
 
-  // Handle branch checklist changes for creating new admins
+  // Handle branch checkboxes for creating new admins
   const toggleAdmBranch = (branch: string) => {
     if (admBranches.includes(branch)) {
       setAdmBranches(admBranches.filter(b => b !== branch));
@@ -218,14 +269,15 @@ export default function LyftGymSystemMaster() {
   // Create Restricted / Universal Admin Account
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!admUsername || !admPassword || !admName) return alert('Provide full name, username, and password');
-    if (!admAccessAll && admBranches.length === 0) return alert('Select at least one allowed branch or choose Universal Access.');
+    if (!admUsername || !admPassword || !admName) return alert('Provide full registration particulars.');
+    if (!admAccessAll && admBranches.length === 0) return alert('Assign regional permission mappings.');
 
     const { error } = await supabase.from('system_users').insert([{
       name: admName.trim(),
       username: admUsername.toLowerCase().trim(),
       password: admPassword,
       role: 'admin', 
+      department: admDept,
       access_all_locations: admAccessAll,
       allowed_branches: admAccessAll ? allBranches : admBranches,
       branch_permissions: admAccessAll 
@@ -234,20 +286,16 @@ export default function LyftGymSystemMaster() {
     }]);
 
     if (error) {
-      alert(`Error creating admin user: ${error.message}`);
+      alert(`Error configuration deployment: ${error.message}`);
     } else {
-      alert('🎉 New Admin Profile safely registered into matrix system logs!');
-      setAdmName('');
-      setAdmUsername('');
-      setAdmPassword('');
-      setAdmAccessAll(false);
-      setAdmBranches([]);
-      setAdmPerms({});
+      alert('🎉 Profile cataloged safely into database registries!');
+      setAdmName(''); setAdmUsername(''); setAdmPassword('');
+      setAdmAccessAll(false); setAdmBranches([]); setAdmPerms({});
       refreshCoreDatabaseData();
     }
   };
 
-  // Multimedia Webcam Handlers
+  // Multimedia Hardware Handlers
   const startCameraInput = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
@@ -257,7 +305,7 @@ export default function LyftGymSystemMaster() {
         if (videoEl) videoEl.srcObject = stream;
       }, 100);
     } catch (err) {
-      alert('Webcam stream failed/denied. Please use alternative manual file upload option below.');
+      alert('Webcam feed denied. Default to manual upload channel below.');
     }
   };
 
@@ -272,77 +320,56 @@ export default function LyftGymSystemMaster() {
       ctx.drawImage(videoEl, 0, 0, 320, 240);
       const dataUrl = canvas.toDataURL('image/jpeg');
       setCapturedPhoto(dataUrl);
-      
       videoStream.getTracks().forEach(track => track.stop());
       setVideoStream(null);
     }
   };
 
-  const handleManualPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setCapturedPhoto(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Member Registration Handler with Photo Enforcement
+  // Gym Operations Handlers
   const handleRegisterMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
-    if (!newName || !newCard) return alert('Data missing: Name and Card Number are required.');
+    if (!canEditCurrentBranch) return alert('Permission lock: View-only access permissions verified.');
+    if (!newName || !newCard) return alert('Validation failed: Name and Card values are mandatory.');
     if (!capturedPhoto) return alert('⚠️ PHOTO REGISTRATION MANDATORY:\n\nClient photo capture must be finalized before account registration can proceed.');
     
     const { error } = await supabase.from('members').insert([{
-      name: newName, 
-      membership_type: newType, 
-      card_number: newCard,
-      phone_number: newPhone, 
-      expiry_date: newExpiry, 
-      branch_location: selectedBranch,
-      email: newEmail,
-      address: newAddress,
-      goal: newGoal,
-      assigned_trainer: newAssignedTrainer,
+      name: newName, membership_type: newType, card_number: newCard,
+      phone_number: newPhone, expiry_date: newExpiry, branch_location: selectedBranch,
+      email: newEmail, address: newAddress, goal: newGoal, assigned_trainer: newAssignedTrainer,
       photo: capturedPhoto
     }]);
     
     if (error) {
-      alert(`⚠️ DATABASE CONFIGURATION NOTICE:\n\nMessage: ${error.message}`);
+      alert(`Database error: ${error.message}`);
     } else {
-      alert('🎉 Member account successfully established with profile identity matrix!');
+      alert('🎉 Client account established successfully!');
       setNewName(''); setNewCard(''); setNewPhone(''); setNewExpiry('');
       setNewEmail(''); setNewAddress(''); setNewGoal(''); setNewAssignedTrainer('');
-      setCapturedPhoto('');
-      setActiveTab('members'); 
+      setCapturedPhoto(''); setActiveTab('members'); 
       refreshCoreDatabaseData();
     }
   };
 
-  // Trainer Matrix Registrator
   const handleRegisterTrainer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
-    if (!trainerName) return alert('Trainer name is required.');
+    if (!canEditCurrentBranch) return alert('Access constraint verified.');
+    if (!trainerName) return alert('Trainer designation label missing.');
 
     const { error } = await supabase.from('trainers').insert([{
       name: trainerName, specialty: trainerSpecialty, phone_number: trainerPhone, branch_location: selectedBranch
     }]);
 
     if (!error) {
-      alert('🎉 New Trainer successfully added to cloud infrastructure!');
+      alert('🎉 Training professional logged successfully.');
       setTrainerName(''); setTrainerPhone('');
       refreshCoreDatabaseData();
     }
   };
 
-  // Inventory Asset Addition Handler
   const handleRegisterInventory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
-    if (!invName) return alert('Item name is required.');
+    if (!canEditCurrentBranch) return alert('Access constraint verified.');
+    if (!invName) return alert('Asset taxonomy criteria missing.');
     
     const { error } = await supabase.from('inventory').insert([{
       item_name: invName, category: invCategory, stock_count: Number(invStock),
@@ -350,79 +377,142 @@ export default function LyftGymSystemMaster() {
     }]);
     
     if (!error) {
-      alert('🎉 Asset successfully updated!');
+      alert('🎉 Asset added successfully!');
       setInvName(''); setInvStock(50); setInvPrice(1500);
       refreshCoreDatabaseData();
     }
   };
 
-  // Inline Row Synchronizations
+  // Inline Data Updates
   const updateMemberRow = async (id: string, updatedField: Partial<Member>) => {
-    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
+    if (!canEditCurrentBranch) return alert('Access constraint verified.');
     const { error } = await supabase.from('members').update(updatedField).eq('id', id);
     if (!error) setMembers(members.map(m => m.id === id ? { ...m, ...updatedField } : m));
   };
 
   const updateInventoryRow = async (id: string, updatedField: Partial<InventoryItem>) => {
-    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
+    if (!canEditCurrentBranch) return alert('Access constraint verified.');
     const { error } = await supabase.from('inventory').update(updatedField).eq('id', id);
     if (!error) setInventory(inventory.map(i => i.id === id ? { ...i, ...updatedField } : i));
   };
 
-  const deleteInventoryItem = async (id: string, name: string) => {
-    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
-    if (!confirm(`Are you sure you want to completely delete "${name}" from inventory logs?`)) return;
-    
-    const { error } = await supabase.from('inventory').delete().eq('id', id);
-    if (!error) {
-      alert('Asset deleted successfully.');
-      setInventory(inventory.filter(i => i.id !== id));
-      setPosCart(posCart.filter(c => c.item.id !== id));
-    }
-  };
-
-  const updateTrainerRow = async (id: string, updatedField: Partial<Trainer>) => {
-    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
-    const { error } = await supabase.from('trainers').update(updatedField).eq('id', id);
-    if (!error) setTrainers(trainers.map(t => t.id === id ? { ...t, ...updatedField } : t));
-  };
-
-  // POS Controls
+  // POS Module Calculations (All VAT/Tax parameters completely removed)
   const addToCart = (item: InventoryItem) => {
-    if (!canEditCurrentBranch) return alert('Access Denied: Your profile holds view-only authorization constraints.');
+    if (!canEditCurrentBranch) return alert('Access constraint verified.');
     if (item.stock_count <= 0) return alert('Item out of stock!');
     const existing = posCart.find(c => c.item.id === item.id);
     if (existing) {
-      if (existing.quantity >= item.stock_count) return alert('Cannot exceed stock.');
+      if (existing.quantity >= item.stock_count) return alert('Exceeds current shelf quantity.');
       setPosCart(posCart.map(c => c.item.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
     } else {
       setPosCart([...posCart, { item, quantity: 1 }]);
     }
   };
 
-  // FIXED: Removed tax/VAT generation properties
   const calculateCartTotals = () => {
     const total = posCart.reduce((sum, c) => sum + (c.item.unit_price * c.quantity), 0);
     return { total };
   };
 
   const processSaleCheckout = async () => {
-    if (!canEditCurrentBranch) return alert('Access Denied: Checkout disabled in view-only configuration status.');
+    if (!canEditCurrentBranch) return alert('Terminal transaction lock out enabled.');
     if (posCart.length === 0) return;
     for (const entry of posCart) {
       const updatedStock = entry.item.stock_count - entry.quantity;
       await supabase.from('inventory').update({ stock_count: updatedStock }).eq('id', entry.item.id);
     }
-    alert('Transaction finalized and stock updated.');
-    setPosCart([]);
-    setCashReceived('');
+    alert('Transaction completed. Ledger balances updated.');
+    setPosCart([]); setCashReceived('');
     refreshCoreDatabaseData();
   };
 
-  // Calculator Engine
+  // Trucking Division Handlers
+  const handleCreateWorkOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPlate || !newDriver || !newDest) return alert('Complete manifest metrics field values.');
+
+    const { error } = await supabase.from('fleet_work_orders').insert([{
+      truck_plate: newPlate.toUpperCase().trim(),
+      driver_name: newDriver.trim(),
+      destination: newDest,
+      cargo_type: newCargo || 'General Freight',
+      dispatch_status: 'Pending'
+    }]);
+
+    if (error) {
+      alert(`Freight entry failure: ${error.message}`);
+    } else {
+      alert('🚚 Manifest entries uploaded to active transport routes.');
+      setNewPlate(''); setNewDriver(''); setNewDest(''); setNewCargo('');
+      refreshCoreDatabaseData();
+    }
+  };
+
+  const updateOrderStatus = async (id: string, nextStatus: 'Pending' | 'In Transit' | 'Delivered') => {
+    const { error } = await supabase.from('fleet_work_orders').update({ dispatch_status: nextStatus }).eq('id', id);
+    if (!error) {
+      setWorkOrders(workOrders.map(o => o.id === id ? { ...o, dispatch_status: nextStatus } : o));
+    }
+  };
+
+  // Local Client-Side Excel Workbook Processor
+  const handleSpreadsheetIngest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!excelFile) return alert('Target audit file load path invalid.');
+    setExcelLoading(true);
+
+    try {
+      const arrayBuffer = await excelFile.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
+      
+      const targetSheetName = 'April Payroll-Final';
+      const targetSheet = workbook.Sheets[targetSheetName];
+      if (!targetSheet) throw new Error(`Spreadsheet sheet layout context match failure: "${targetSheetName}" missing.`);
+
+      const rawMatrix = XLSX.utils.sheet_to_json(targetSheet, { header: 1 }) as any[][];
+      const dataRecordsLines = rawMatrix.slice(3); // Skips index layout table definitions
+      const itemsToUpload = [];
+
+      for (const row of dataRecordsLines) {
+        const name = row[0];
+        if (!name || name.trim() === '' || name.toLowerCase().includes('total')) continue;
+
+        const gross = parseFloat(row[30]) || 0;
+        const nis = parseFloat(row[32]) || 0;
+        const paye = parseFloat(row[34]) || 0;
+        const net = parseFloat(row[35]) || 0;
+
+        // Skip records with empty contribution matches
+        if (nis === 0 && paye === 0) continue;
+
+        itemsToUpload.push({
+          employee_name: name.trim(),
+          gross_salary: gross,
+          nis_contribution: nis,
+          paye_deduction: paye,
+          net_pay: net,
+          payment_frequency: 'Paid Fortnightly',
+          payroll_cycle_date: '2026-04-30'
+        });
+      }
+
+      const { error: insertErr } = await supabase.from('payroll_records').insert(itemsToUpload);
+      if (insertErr) throw insertErr;
+
+      alert(`🎉 System verified and parsed ${itemsToUpload.length} payroll entries successfully.`);
+      setExcelFile(null);
+      refreshCoreDatabaseData();
+    } catch (err: any) {
+      alert(`Ingestion error: ${err.message}`);
+    } finally {
+      setExcelLoading(false);
+    }
+  };
+
+  // Workspace Calculator Controls
   const handleCalcInput = (val: string) => {
     if (!isNaN(Number(val)) || val === '.') {
-      setCalcDisplay(calcDisplay === '0' || calcOp && calcDisplay === calcMemory ? val : calcDisplay + val);
+      setCalcDisplay(calcDisplay === '0' || (calcOp && calcDisplay === calcMemory) ? val : calcDisplay + val);
     } else if (val === 'C') {
       setCalcDisplay('0'); setCalcMemory(null); setCalcOp(null);
     } else if (val === '=') {
@@ -430,41 +520,35 @@ export default function LyftGymSystemMaster() {
       const res = eval(`${calcMemory} ${calcOp} ${calcDisplay}`);
       setCalcDisplay(String(res)); setCalcMemory(null); setCalcOp(null);
     } else {
-      setCalcMemory(calcDisplay);
-      setCalcOp(val);
+      setCalcMemory(calcDisplay); setCalcOp(val);
     }
   };
 
-  // Filter client-side performance rows
+  // Local View Filters
   const filteredMembers = members.filter(m => {
-    const searchLower = memberSearch.toLowerCase();
-    return (
-      (m.name || '').toLowerCase().includes(searchLower) ||
-      (m.card_number || '').toLowerCase().includes(searchLower) ||
-      (m.phone_number || '').toLowerCase().includes(searchLower) ||
-      (m.assigned_trainer || '').toLowerCase().includes(searchLower)
-    );
+    const s = memberSearch.toLowerCase();
+    return (m.name || '').toLowerCase().includes(s) || (m.card_number || '').toLowerCase().includes(s) || (m.phone_number || '').toLowerCase().includes(s);
   });
 
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col justify-center items-center px-4">
         <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-xl p-8 shadow-2xl">
-          <div className="flex items-center gap-2 mb-6 justify-center">
-            <span className="text-red-600 font-black text-3xl tracking-tighter">LYFT</span>
-            <span className="text-zinc-100 font-light text-2xl tracking-wide">GYM MATRIX</span>
+          <div className="flex flex-col items-center gap-1 mb-6 text-center">
+            <span className="text-red-600 font-black text-3xl tracking-tighter">LYFT NETWORK</span>
+            <span className="text-zinc-400 font-light text-sm tracking-wide">ENTERPRISE MANAGEMENT SYSTEM</span>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs uppercase tracking-widest text-zinc-400 font-semibold mb-2">Username</label>
-              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 transition text-sm" placeholder="admin" required />
+              <label className="block text-xs uppercase tracking-widest text-zinc-400 font-semibold mb-2">System User Identity</label>
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 text-sm" placeholder="Username" required />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-widest text-zinc-400 font-semibold mb-2">Access Key</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 transition text-sm" placeholder="••••••••" required />
+              <label className="block text-xs uppercase tracking-widest text-zinc-400 font-semibold mb-2">Secure Handshake Token</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:border-red-600 text-sm" placeholder="••••••••" required />
             </div>
             {loginError && <p className="text-red-500 text-xs font-medium bg-red-950/30 border border-red-900/50 p-3 rounded-lg">{loginError}</p>}
-            <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition tracking-wide uppercase text-sm mt-2">Authorize Terminal</button>
+            <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg tracking-wide uppercase text-sm mt-2">Initialize Hub Node</button>
           </form>
         </div>
       </div>
@@ -474,128 +558,133 @@ export default function LyftGymSystemMaster() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans relative">
       
+      {/* Lightbox Modal Window View */}
       {previewPhotoModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4" onClick={() => setPreviewPhotoModal(null)}>
-          <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-2xl max-w-sm w-full shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-2xl max-w-sm w-full relative" onClick={(e) => e.stopPropagation()}>
             <button className="absolute -top-3 -right-3 bg-red-600 hover:bg-red-700 font-black rounded-full w-8 h-8 text-xs text-white" onClick={() => setPreviewPhotoModal(null)}>✕</button>
-            <img src={previewPhotoModal} alt="Member Face Profile" className="w-full h-auto aspect-square object-cover rounded-xl bg-zinc-950 border border-zinc-800" />
-            <p className="text-center text-[11px] text-zinc-400 mt-2 italic font-mono tracking-wide">Identity Verified Security Thumbnail</p>
+            <img src={previewPhotoModal} alt="Biometric Capture Thumbnail" className="w-full h-auto aspect-square object-cover rounded-xl bg-zinc-950 border border-zinc-800" />
           </div>
         </div>
       )}
 
-      {/* Top Header Ribbon */}
+      {/* Corporate Dashboard Header Block */}
       <header className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1">
-            <span className="text-red-600 font-black text-2xl tracking-tighter">LYFT</span>
-            <span className="text-zinc-400 font-light text-xl">NETWORK</span>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-red-600 font-black text-2xl tracking-tighter">LYFT</span>
+              <span className="text-zinc-100 font-medium text-xl tracking-wide">MATRIX</span>
+            </div>
+            <span className="text-[10px] text-zinc-500 font-mono tracking-wider">Operator Profile: {currentUser?.name} ({currentUser?.department === 'lyft_trucking' ? 'Logistics Division' : 'Fitness Operations'})</span>
           </div>
           <div className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${canEditCurrentBranch ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-400' : 'bg-amber-950/40 border-amber-800/60 text-amber-500'}`}>
-            {canEditCurrentBranch ? '⚡ FULL EDITING GRANTED' : '⚠️ READ-ONLY CONSTRAINED'}
+            {canEditCurrentBranch ? '⚡ READ-WRITE' : '⚠️ VIEW-ONLY'}
           </div>
         </div>
         
-        {/* Branch Selector */}
+        {/* Network Location Routing Handle */}
         <div className="flex items-center gap-2">
-          <label className="text-xs uppercase tracking-wider text-zinc-400 font-bold">Active Branch Node:</label>
+          <label className="text-xs uppercase tracking-wider text-zinc-400 font-bold">Location Segment:</label>
           <select 
             value={selectedBranch} 
             onChange={(e) => { setSelectedBranch(e.target.value); setMemberSearch(''); }} 
             className="bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-1.5 focus:border-red-600 font-medium text-sm focus:outline-none"
           >
-            {allowedBranchesToSelect.map(branch => (
-              <option key={branch} value={branch}>{branch}</option>
+            {allowedBranchesToSelect.map(b => (
+              <option key={b} value={b}>{b}</option>
             ))}
           </select>
         </div>
       </header>
 
       <div className="flex flex-1 flex-col md:flex-row">
-        {/* Navigation Sidebar */}
-        <nav className="w-full md:w-64 bg-zinc-900/50 border-r border-zinc-800 p-4 space-y-1">
-          <button onClick={() => setActiveTab('members')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'members' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>👥 Members Directory</button>
-          <button onClick={() => setActiveTab('register')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'register' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📝 Account Registration</button>
-          <button onClick={() => setActiveTab('trainers')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'trainers' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>🏋️ Trainer Management</button>
-          <button onClick={() => setActiveTab('pos')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'pos' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>🛒 Front-Desk POS</button>
-          <button onClick={() => setActiveTab('inventory')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'inventory' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📦 Inventory Logistics</button>
-          <button onClick={() => setActiveTab('analytics')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition ${activeTab === 'analytics' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-800'}`}>📈 Analytics Overview</button>
+        {/* Navigation Sidebar Switchboard */}
+        <nav className="w-full md:w-64 bg-zinc-900/50 border-r border-zinc-800 p-4 space-y-1 shrink-0">
           
-          {currentUser?.access_all_locations && (
-            <button onClick={() => setActiveTab('admin_mgmt')} className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-bold transition border border-zinc-800 ${activeTab === 'admin_mgmt' ? 'bg-zinc-100 text-zinc-950 font-black' : 'text-red-400 hover:bg-zinc-800'}`}>🔐 Admin Management</button>
+          {currentUser?.department === 'gym_operations' && (
+            <>
+              <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider px-3 pt-2 pb-1 font-mono">Gym Floor Control</div>
+              <button onClick={() => setActiveTab('members')} className={`w-full text-left px-4 py-2 rounded-lg text-sm transition ${activeTab === 'members' ? 'bg-red-600 text-white shadow-lg font-bold' : 'text-zinc-400 hover:bg-zinc-800'}`}>👥 Member Ledger</button>
+              <button onClick={() => setActiveTab('register')} className={`w-full text-left px-4 py-2 rounded-lg text-sm transition ${activeTab === 'register' ? 'bg-red-600 text-white shadow-lg font-bold' : 'text-zinc-400 hover:bg-zinc-800'}`}>📝 Register Member</button>
+              <button onClick={() => setActiveTab('trainers')} className={`w-full text-left px-4 py-2 rounded-lg text-sm transition ${activeTab === 'trainers' ? 'bg-red-600 text-white shadow-lg font-bold' : 'text-zinc-400 hover:bg-zinc-800'}`}>🏋️ Team Trainers</button>
+              <button onClick={() => setActiveTab('pos')} className={`w-full text-left px-4 py-2 rounded-lg text-sm transition ${activeTab === 'pos' ? 'bg-red-600 text-white shadow-lg font-bold' : 'text-zinc-400 hover:bg-zinc-800'}`}>🛒 Counter Checkout</button>
+              <button onClick={() => setActiveTab('inventory')} className={`w-full text-left px-4 py-2 rounded-lg text-sm transition ${activeTab === 'inventory' ? 'bg-red-600 text-white shadow-lg font-bold' : 'text-zinc-400 hover:bg-zinc-800'}`}>📦 Shelf Inventory</button>
+            </>
           )}
 
-          {/* Workspace Calculator */}
-          <div className="pt-6">
+          {currentUser?.department === 'lyft_trucking' && (
+            <>
+              <div className="text-[10px] uppercase font-bold text-amber-500 tracking-wider px-3 pt-4 pb-1 font-mono">Freight Logistics</div>
+              <button onClick={() => setActiveTab('trucking_fleet')} className={`w-full text-left px-4 py-2 rounded-lg text-sm transition ${activeTab === 'trucking_fleet' ? 'bg-amber-600 text-white font-bold' : 'text-zinc-400 hover:bg-zinc-800'}`}>🚚 Transport Fleet</button>
+              <button onClick={() => setActiveTab('trucking_payroll')} className={`w-full text-left px-4 py-2 rounded-lg text-sm transition ${activeTab === 'trucking_payroll' ? 'bg-amber-600 text-white font-bold' : 'text-zinc-400 hover:bg-zinc-800'}`}>💵 Payroll Processing</button>
+            </>
+          )}
+          
+          {currentUser?.access_all_locations && (
+            <>
+              <div className="text-[10px] uppercase font-bold text-red-500 tracking-wider px-3 pt-6 pb-1 font-mono">System Terminal Matrix</div>
+              <button onClick={() => setActiveTab('admin_mgmt')} className={`w-full text-left px-4 py-2 rounded-lg text-sm transition border border-zinc-800 ${activeTab === 'admin_mgmt' ? 'bg-zinc-100 text-zinc-950 font-black' : 'text-zinc-400 hover:bg-zinc-800'}`}>🔐 User Access Rights</button>
+            </>
+          )}
+
+          {/* Core Workspace Helper Tool Block */}
+          <div className="pt-8">
             <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-lg space-y-2">
-              <div className="bg-zinc-900 border border-zinc-800 text-right p-2 rounded text-base font-mono truncate text-emerald-400">{calcDisplay}</div>
-              <div className="grid grid-cols-4 gap-1 text-xs font-bold font-mono">
-                {['C', '/', '*', '-'].map(b => <button key={b} onClick={() => handleCalcInput(b)} className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300">{b}</button>)}
-                {['7', '8', '9', '+'].map(b => <button key={b} onClick={() => handleCalcInput(b)} className="p-2 bg-zinc-900 hover:bg-zinc-800 rounded text-zinc-100">{b}</button>)}
-                {['4', '5', '6', '='].map(b => <button key={b} onClick={() => handleCalcInput(b)} className={`p-2 rounded row-span-2 ${b === '=' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-zinc-900 hover:bg-zinc-800'}`}>{b}</button>)}
-                {['1', '2', '3'].map(b => <button key={b} onClick={() => handleCalcInput(b)} className="p-2 bg-zinc-900 hover:bg-zinc-800 rounded text-zinc-100">{b}</button>)}
-                {['0', '.'].map(b => <button key={b} onClick={() => handleCalcInput(b)} className={`p-2 bg-zinc-900 hover:bg-zinc-800 rounded text-zinc-100 ${b === '0' ? 'col-span-2' : ''}`}>{b}</button>)}
+              <div className="bg-zinc-900 border border-zinc-800 text-right p-2 rounded text-sm font-mono truncate text-emerald-400">{calcDisplay}</div>
+              <div className="grid grid-cols-4 gap-1 text-[11px] font-bold font-mono">
+                {['C', '/', '*', '-'].map(b => <button key={b} onClick={() => handleCalcInput(b)} className="p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300">{b}</button>)}
+                {['7', '8', '9', '+'].map(b => <button key={b} onClick={() => handleCalcInput(b)} className="p-1.5 bg-zinc-900 hover:bg-zinc-800 rounded text-zinc-100">{b}</button>)}
+                {['4', '5', '6', '='].map(b => <button key={b} onClick={() => handleCalcInput(b)} className={`p-1.5 rounded ${b === '=' ? 'bg-red-600 text-white hover:bg-red-700 row-span-2 flex items-center justify-center' : 'bg-zinc-900 hover:bg-zinc-800'}`}>{b}</button>)}
+                {['1', '2', '3'].map(b => <button key={b} onClick={() => handleCalcInput(b)} className="p-1.5 bg-zinc-900 hover:bg-zinc-800 rounded text-zinc-100">{b}</button>)}
+                {['0', '.'].map(b => <button key={b} onClick={() => handleCalcInput(b)} className={`p-1.5 bg-zinc-900 hover:bg-zinc-800 rounded text-zinc-100 ${b === '0' ? 'col-span-2' : ''}`}>{b}</button>)}
               </div>
             </div>
           </div>
         </nav>
 
-        {/* Main Workspace display */}
+        {/* Dynamic Display Render Panels */}
         <main className="flex-1 p-6 md:p-8 overflow-y-auto">
 
-          {/* TAB 1: MEMBERS DATABASE */}
+          {/* TAB 1: FITNESS ROSTER REGISTRIES */}
           {activeTab === 'members' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-900/40 p-4 border border-zinc-800/80 rounded-xl">
                 <div>
-                  <h1 className="text-xl font-bold">{selectedBranch} Roster ({filteredMembers.length} records)</h1>
-                  <p className="text-xs text-zinc-400">Search profiles or tap identity thumbnails to confirm biometrics.</p>
+                  <h1 className="text-xl font-bold">{selectedBranch} Active Ledger ({filteredMembers.length} Accounts)</h1>
+                  <p className="text-xs text-zinc-400">Inline database updates save automatically on input frame loss.</p>
                 </div>
                 <div className="w-full sm:w-80">
-                  <input 
-                    type="text" 
-                    placeholder="🔍 Search name, phone, card..." 
-                    value={memberSearch}
-                    onChange={(e) => setMemberSearch(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-2.5 text-xs text-zinc-100 focus:outline-none focus:border-red-600 placeholder-zinc-500 transition font-medium"
-                  />
+                  <input type="text" placeholder="🔍 Search member name, card id..." value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-2 text-xs focus:border-red-600 placeholder-zinc-500 transition outline-none" />
                 </div>
               </div>
 
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden max-h-[650px] overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[1250px]">
-                  <thead className="sticky top-0 bg-zinc-950 z-10 border-b border-zinc-800 text-xs font-bold uppercase text-zinc-400">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[1200px]">
+                  <thead className="bg-zinc-950 border-b border-zinc-800 text-xs text-zinc-400">
                     <tr>
-                      <th className="p-4 w-16 text-center">Photo</th>
-                      <th className="p-4 w-44">Name</th>
-                      <th className="p-4 w-28">Tier</th>
-                      <th className="p-4 w-32">Card String</th>
-                      <th className="p-4 w-36">Phone</th>
-                      <th className="p-4 w-44">Email</th>
-                      <th className="p-4 w-44">Address</th>
-                      <th className="p-4 w-40">Gym Goal</th>
-                      <th className="p-4 w-48">Assigned Trainer</th>
-                      <th className="p-4 w-36">Expiration</th>
+                      <th className="p-4 w-20 text-center">Biometric</th>
+                      <th className="p-4">Client Name</th>
+                      <th className="p-4 w-32">Tier Class</th>
+                      <th className="p-4 w-36">Card Stripe ID</th>
+                      <th className="p-4 w-36">Mobile Link</th>
+                      <th className="p-4">Assigned Trainer</th>
+                      <th className="p-4 w-36">Account Expiry</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs divide-y divide-zinc-800">
                     {filteredMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="text-center py-8 text-zinc-500 italic">No corresponding logs found at this branch node.</td>
+                        <td colSpan={7} className="text-center py-8 text-zinc-500 italic">No corresponding records mapped to active segment branch node.</td>
                       </tr>
                     ) : (
                       filteredMembers.map(m => (
                         <tr key={m.id} className="hover:bg-zinc-800/20">
                           <td className="p-2 text-center">
                             {m.photo ? (
-                              <img 
-                                src={m.photo} 
-                                alt="" 
-                                onClick={() => setPreviewPhotoModal(m.photo!)}
-                                className="w-8 h-8 rounded-full border border-zinc-700 bg-zinc-950 object-cover cursor-zoom-in mx-auto hover:border-red-500 transition"
-                              />
+                              <img src={m.photo} alt="" onClick={() => setPreviewPhotoModal(m.photo!)} className="w-8 h-8 rounded-full border border-zinc-700 bg-zinc-950 object-cover cursor-zoom-in mx-auto hover:border-red-500 transition" />
                             ) : (
-                              <div className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-950/40 flex items-center justify-center text-[9px] text-zinc-600 font-mono mx-auto">None</div>
+                              <div className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-950/40 flex items-center justify-center text-[9px] text-zinc-600 mx-auto">None</div>
                             )}
                           </td>
                           <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.name} onBlur={(e) => updateMemberRow(m.id, { name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none disabled:text-zinc-400" /></td>
@@ -605,22 +694,12 @@ export default function LyftGymSystemMaster() {
                               <option value="VIP" className="bg-zinc-900 text-yellow-500">VIP</option>
                             </select>
                           </td>
-                          <td className="p-2 font-mono"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.card_number} onBlur={(e) => updateMemberRow(m.id, { card_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none font-mono disabled:text-zinc-500" /></td>
+                          <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.card_number} onBlur={(e) => updateMemberRow(m.id, { card_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none font-mono disabled:text-zinc-500" /></td>
                           <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.phone_number} onBlur={(e) => updateMemberRow(m.id, { phone_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none disabled:text-zinc-400" /></td>
-                          <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.email || ''} onBlur={(e) => updateMemberRow(m.id, { email: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none disabled:text-zinc-400" placeholder="Add email..." /></td>
-                          <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.address || ''} onBlur={(e) => updateMemberRow(m.id, { address: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none disabled:text-zinc-400" placeholder="Add address..." /></td>
-                          <td className="p-2"><input type="text" disabled={!canEditCurrentBranch} defaultValue={m.goal || ''} onBlur={(e) => updateMemberRow(m.id, { goal: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 w-full focus:outline-none text-zinc-300 disabled:text-zinc-400" placeholder="Goal detail..." /></td>
                           <td className="p-2">
-                            <select 
-                              disabled={!canEditCurrentBranch}
-                              defaultValue={m.assigned_trainer || ''} 
-                              onChange={(e) => updateMemberRow(m.id, { assigned_trainer: e.target.value })}
-                              className="bg-transparent text-emerald-400 font-medium focus:outline-none w-full disabled:text-zinc-500"
-                            >
-                              <option value="" className="bg-zinc-900 text-zinc-500">No Coach Assigned</option>
-                              {trainers.map(t => (
-                                <option key={t.id} value={t.name} className="bg-zinc-900 text-zinc-100">{t.name}</option>
-                              ))}
+                            <select disabled={!canEditCurrentBranch} defaultValue={m.assigned_trainer || ''} onChange={(e) => updateMemberRow(m.id, { assigned_trainer: e.target.value })} className="bg-transparent text-zinc-300 focus:outline-none w-full disabled:text-zinc-400">
+                              <option value="">Unassigned</option>
+                              {trainers.map(t => <option key={t.id} value={t.name} className="bg-zinc-900">{t.name}</option>)}
                             </select>
                           </td>
                           <td className="p-2"><input type="date" disabled={!canEditCurrentBranch} defaultValue={m.expiry_date} onChange={(e) => updateMemberRow(m.id, { expiry_date: e.target.value })} className="bg-transparent text-zinc-300 focus:outline-none disabled:text-zinc-500" /></td>
@@ -633,273 +712,245 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 2: PROFILE REGISTRATION */}
+          {/* TAB 2: MANDATORY BIOMETRIC REGISTRATION ENGINE */}
           {activeTab === 'register' && (
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-              <form onSubmit={handleRegisterMember} className="xl:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 shadow-xl">
-                <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">📝 Profile Creation Asset: <span className="text-red-500 font-mono text-sm">{selectedBranch}</span></h2>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Full Legal Name</label>
-                    <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-zinc-100 focus:outline-none focus:border-red-600" placeholder="John Doe" required />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Membership Designation</label>
-                    <select value={newType} onChange={(e) => setNewType(e.target.value as 'Regular' | 'VIP')} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs font-semibold focus:outline-none text-zinc-100">
-                      <option value="Regular">Regular Class Access</option>
-                      <option value="VIP">VIP Elite Pass</option>
-                    </select>
-                  </div>
-                </div>
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div>
+                <h1 className="text-xl font-bold">Client Matrix Entry Profile Registration</h1>
+                <p className="text-xs text-zinc-400">Hardware verification check requires identity image mapping capture.</p>
+              </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">RFID Access Card String / Code</label>
-                    <input type="text" value={newCard} onChange={(e) => setNewCard(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs font-mono focus:outline-none focus:border-red-600" placeholder="e.g. 8752" required />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Telephone Contact System</label>
-                    <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="e.g. 5926671954" />
-                  </div>
-                </div>
-
-                <div className="border-t border-zinc-800/80 pt-3 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Form Inputs Component */}
+                <form onSubmit={handleRegisterMember} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs text-zinc-400 mb-1">Email Address</label>
-                      <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="client@domain.com" />
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Full Legal Name</label>
+                      <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-100 focus:border-red-600 outline-none" placeholder="John Doe" required />
                     </div>
                     <div>
-                      <label className="block text-xs text-zinc-400 mb-1">Residential Address</label>
-                      <input type="text" value={newAddress} onChange={(e) => setNewAddress(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="Sheriff St, Georgetown" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-zinc-400 mb-1">Goal in the Gym</label>
-                      <input type="text" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" placeholder="Weight Loss, Muscle Gain" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-zinc-400 mb-1">Assign Coach Status</label>
-                      <select value={newAssignedTrainer} onChange={(e) => setNewAssignedTrainer(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-emerald-400 font-medium focus:outline-none focus:border-red-600">
-                        <option value="">No / Don't Need A Trainer</option>
-                        {trainers.map(t => (
-                          <option key={t.id} value={t.name}>Yes {'->'} Assign to {t.name}</option>
-                        ))}
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Membership Plan</label>
+                      <select value={newType} onChange={(e) => setNewType(e.target.value as 'Regular' | 'VIP')} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-100 focus:border-red-600 outline-none">
+                        <option value="Regular">Regular Class Plan</option>
+                        <option value="VIP">VIP Tier Matrix</option>
                       </select>
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Card Terminal Value</label>
+                      <input type="text" value={newCard} onChange={(e) => setNewCard(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs font-mono focus:border-red-600 outline-none" placeholder="LYFT-8890" required />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Mobile Interface Number</label>
+                      <input type="text" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs focus:border-red-600 outline-none" placeholder="592-622-0000" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Assigned Support Staff</label>
+                      <select value={newAssignedTrainer} onChange={(e) => setNewAssignedTrainer(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs focus:border-red-600 outline-none">
+                        <option value="">No Instructor Assigned</option>
+                        {trainers.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Term End Date</label>
+                      <input type="date" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-300 focus:border-red-600 outline-none" />
+                    </div>
+                  </div>
+
+                  <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wider transition">Deploy Registry Record</button>
+                </form>
+
+                {/* Biometric Media Ingestion Terminal */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col items-center justify-between space-y-4 text-center">
+                  <div className="w-full">
+                    <span className="block text-[11px] font-bold text-zinc-400 uppercase mb-2">Mandatory Identity Image Array</span>
+                    
+                    <div className="w-full aspect-video max-w-[280px] mx-auto bg-zinc-950 rounded-lg border border-zinc-800 relative flex items-center justify-center overflow-hidden">
+                      {capturedPhoto ? (
+                        <img src={capturedPhoto} alt="Captured preview" className="w-full h-full object-cover" />
+                      ) : videoStream ? (
+                        <video id="webcam-feed" autoPlay playsInline muted className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-zinc-600 text-xs italic p-4 font-mono">Camera Line Disconnected</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="w-full space-y-3">
+                    {videoStream ? (
+                      <button type="button" onClick={captureCameraFrame} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded text-xs uppercase tracking-wide">Capture Matrix Frame</button>
+                    ) : (
+                      <button type="button" onClick={startCameraInput} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-2 rounded text-xs uppercase tracking-wide">Initialize Hardware Stream</button>
+                    )}
+
+                    <div className="relative flex py-1 items-center">
+                      <div className="flex-1 border-t border-zinc-800"></div>
+                      <span className="flex-shrink mx-4 text-[10px] text-zinc-600 uppercase font-bold font-mono">OR</span>
+                      <div className="flex-1 border-t border-zinc-800"></div>
+                    </div>
+
+                    <div>
+                      <input type="file" accept="image/*" id="photo-upload" className="hidden" onChange={handleManualPhotoUpload} />
+                      <label htmlFor="photo-upload" className="block text-center w-full bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-zinc-400 py-2 rounded text-xs cursor-pointer transition">Upload File Payload Instead</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: TRAINER MANAGEMENT STRATIFICATION */}
+          {activeTab === 'trainers' && (
+            <div className="space-y-6 max-w-4xl mx-auto">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+                <h2 className="text-base font-bold uppercase tracking-wider text-red-500 mb-4">Add Certified Physical Specialist</h2>
+                <form onSubmit={handleRegisterTrainer} className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Instructor Name</label>
+                    <input type="text" value={trainerName} onChange={(e) => setTrainerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-red-600" placeholder="Ravin Mahabal" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Mobile Interface</label>
+                    <input type="text" value={trainerPhone} onChange={(e) => setTrainerPhone(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-red-600" placeholder="592-622-1111" />
+                  </div>
+                  <button type="submit" className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded text-xs uppercase tracking-wider">Deploy Instructor</button>
+                </form>
+              </div>
+
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+                <h2 className="text-base font-bold uppercase tracking-wider text-zinc-300 mb-4">Active Staff Matrix Node</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {trainers.map(t => (
+                    <div key={t.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex flex-col justify-between space-y-2">
+                      <div>
+                        <h3 className="text-sm font-bold text-zinc-100">{t.name}</h3>
+                        <p className="text-xs text-red-400 font-mono">{t.specialty}</p>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px] text-zinc-500 pt-2 border-t border-zinc-900 font-mono">
+                        <span>Phone: {t.phone_number}</span>
+                        <span>Branch: {t.branch_location}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: TAX-FREE POINT OF SALE SYSTEM */}
+          {activeTab === 'pos' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* Shelf Selection Viewport */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl">
+                  <h2 className="text-base font-bold tracking-tight">Segment Trading Goods Shelf ({selectedBranch})</h2>
+                  <p className="text-xs text-zinc-400">Click item tile to drop into current checkout payload.</p>
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {inventory.filter(i => i.stock_count > 0).map(item => (
+                    <div key={item.id} onClick={() => addToCart(item)} className="bg-zinc-900 border border-zinc-800 hover:border-red-600 p-4 rounded-xl cursor-pointer transition flex justify-between items-center">
+                      <div>
+                        <h3 className="text-xs font-bold text-zinc-200">{item.item_name}</h3>
+                        <p className="text-[10px] font-mono text-zinc-500 uppercase">{item.category} • Count: {item.stock_count}</p>
+                      </div>
+                      <span className="text-xs font-bold text-emerald-400 font-mono">${item.unit_price} GYD</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dynamic Ledger Slip (VAT parameters permanently scrubbed) */}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col justify-between h-fit space-y-6">
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Contract Term Expiration</label>
-                  <input type="date" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 text-xs focus:outline-none focus:border-red-600" />
-                </div>
-
-                <button 
-                  type="submit" 
-                  disabled={!canEditCurrentBranch}
-                  className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-bold py-3 px-4 rounded text-xs uppercase tracking-wide transition"
-                >
-                  {canEditCurrentBranch ? 'Commit Member Ledger Profile' : '🔒 Read-Only Restrained'}
-                </button>
-              </form>
-
-              {/* MANDATORY PHOTO REGISTRATION STATION */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-4 shadow-xl">
-                <div>
-                  <h3 className="text-sm font-bold text-zinc-200">📸 Identity Snapshot Terminal</h3>
-                  <p className="text-[11px] text-zinc-500">A live biometric user photo is required for onboarding.</p>
-                </div>
-
-                <div className="w-full aspect-square bg-zinc-950 border border-zinc-800 rounded-lg overflow-hidden flex flex-col justify-center items-center relative">
-                  {capturedPhoto ? (
-                    <img src={capturedPhoto} alt="Captured Face Payload" className="w-full h-full object-cover" />
-                  ) : videoStream ? (
-                    <video id="webcam-feed" autoPlay playsInline className="w-full h-full object-cover scale-x-[-1]"></video>
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-red-500 border-b border-zinc-800 pb-3 mb-4">Checkout Cargo Payload</h2>
+                  
+                  {posCart.length === 0 ? (
+                    <p className="text-zinc-500 text-xs italic py-8 text-center">Checkout bin empty.</p>
                   ) : (
-                    <div className="text-center p-4 space-y-2">
-                      <span className="text-3xl block">👤</span>
-                      <p className="text-xs text-zinc-500 italic">No image data staged yet.</p>
+                    <div className="space-y-3 divide-y divide-zinc-800/60 max-h-[220px] overflow-y-auto pr-1">
+                      {posCart.map(c => (
+                        <div key={c.item.id} className="flex justify-between items-center text-xs pt-2">
+                          <div>
+                            <p className="font-bold text-zinc-300">{c.item.item_name}</p>
+                            <p className="text-[10px] text-zinc-500 font-mono">Qty: {c.quantity} × ${c.item.unit_price}</p>
+                          </div>
+                          <span className="font-mono text-zinc-300">${c.quantity * c.item.unit_price}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  {!videoStream ? (
-                    <button type="button" onClick={startCameraInput} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs py-2 rounded font-semibold transition">📷 Initialize Live Webcam</button>
-                  ) : (
-                    <button type="button" onClick={captureCameraFrame} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 rounded font-bold tracking-wide animate-pulse transition">🛑 Freeze & Save Photo Frame</button>
-                  )}
-                  <div className="text-center"><span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">- OR -</span></div>
+                <div className="border-t border-zinc-800 pt-4 space-y-4">
+                  <div className="flex justify-between text-sm font-bold border-b border-zinc-800/80 pb-3">
+                    <span className="text-zinc-400">Net Transaction Total:</span>
+                    <span className="text-emerald-400 font-mono text-base">${calculateCartTotals().total} GYD</span>
+                  </div>
+
                   <div>
-                    <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Upload File Manually</label>
-                    <input type="file" accept="image/*" onChange={handleManualPhotoUpload} className="w-full text-xs text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-zinc-800 file:text-zinc-300 file:cursor-pointer" />
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Cash Value Tendered</label>
+                    <input type="number" value={cashReceived} onChange={(e) => setCashReceived(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs font-mono text-emerald-400 focus:outline-none" placeholder="0" />
                   </div>
-                  {capturedPhoto && (
-                    <div className="bg-emerald-950/20 border border-emerald-900/50 rounded p-2 text-center text-[10px] text-emerald-400 font-mono">✓ Profile Identity Matrix Staged</div>
+
+                  {Number(cashReceived) > 0 && (
+                    <div className="flex justify-between text-xs font-mono text-zinc-400 bg-zinc-950 p-2.5 rounded border border-zinc-800">
+                      <span>Tender Change Output:</span>
+                      <span className="text-white font-bold">${Number(cashReceived) - calculateCartTotals().total} GYD</span>
+                    </div>
                   )}
+
+                  <button onClick={processSaleCheckout} disabled={posCart.length === 0} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-800 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wider transition">Finalize Ledger Receipt</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: TRAINER MANAGEMENT */}
-          {activeTab === 'trainers' && (
-            <div className="space-y-6">
-              <form onSubmit={handleRegisterTrainer} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-                <div>
-                  <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Trainer Name</label>
-                  <input type="text" value={trainerName} onChange={(e) => setTrainerName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-red-600" placeholder="e.g. Ravin Mahabal" required />
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Discipline Specialty</label>
-                  <select value={trainerSpecialty} onChange={(e) => setTrainerSpecialty(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-red-600">
-                    <option value="Personal Training">Personal Training</option>
-                    <option value="Elite Strength Specialist">Elite Strength Specialist</option>
-                    <option value="Bodybuilding & Nutrition Coach">Bodybuilding & Nutrition Coach</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Phone Number</label>
-                  <input type="text" value={trainerPhone} onChange={(e) => setTrainerPhone(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-red-600" placeholder="e.g. 592-622-1111" />
-                </div>
-                <div>
-                  <button type="submit" disabled={!canEditCurrentBranch} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-bold py-2 rounded text-xs uppercase tracking-wide transition">Add Trainer Asset</button>
-                </div>
-              </form>
-
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-zinc-950/60 border-b border-zinc-800 text-xs font-bold uppercase text-zinc-400">
-                      <th className="p-4">Trainer Name</th>
-                      <th className="p-4">Discipline Designation</th>
-                      <th className="p-4">Contact System</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-xs divide-y divide-zinc-800">
-                    {trainers.map(t => (
-                      <tr key={t.id} className="hover:bg-zinc-800/10">
-                        <td className="p-3"><input type="text" disabled={!canEditCurrentBranch} defaultValue={t.name} onBlur={(e) => updateTrainerRow(t.id, { name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none font-medium disabled:text-zinc-400" /></td>
-                        <td className="p-3"><input type="text" disabled={!canEditCurrentBranch} defaultValue={t.specialty} onBlur={(e) => updateTrainerRow(t.id, { specialty: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none disabled:text-zinc-400" /></td>
-                        <td className="p-3 font-mono"><input type="text" disabled={!canEditCurrentBranch} defaultValue={t.phone_number} onBlur={(e) => updateTrainerRow(t.id, { phone_number: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none disabled:text-zinc-400" /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: POS FRONT REGISTER */}
-          {activeTab === 'pos' && (
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-              <div className="xl:col-span-2 space-y-4">
-                <h1 className="text-xl font-bold">{selectedBranch} Front Register</h1>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {inventory.map(item => (
-                    <button key={item.id} onClick={() => addToCart(item)} className="bg-zinc-900 hover:bg-zinc-800/80 border border-zinc-800 p-4 rounded-xl text-left transition flex flex-col justify-between h-28 group">
-                      <div>
-                        <span className="text-xs text-zinc-500 block uppercase font-bold tracking-tight">{item.category}</span>
-                        <span className="text-sm font-semibold text-zinc-200 mt-1 block leading-tight">{item.item_name}</span>
-                      </div>
-                      <div className="flex justify-between items-center w-full mt-2">
-                        <span className="text-emerald-400 font-mono font-bold">${item.unit_price.toLocaleString()}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${item.stock_count < 10 ? 'bg-red-950 text-red-400 border border-red-900/30' : 'bg-zinc-950 text-zinc-400'}`}>Qty: {item.stock_count}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col justify-between shadow-xl h-[500px]">
-                <div>
-                  <h2 className="text-sm uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2 mb-3">Checkout Terminal</h2>
-                  <div className="space-y-2 overflow-y-auto max-h-60 pr-1">
-                    {posCart.length === 0 ? <p className="text-xs text-zinc-500 italic py-4 text-center">Cart empty.</p> : posCart.map(c => (
-                      <div key={c.item.id} className="flex justify-between items-center text-xs bg-zinc-950 p-2 rounded border border-zinc-800">
-                        <div>
-                          <p className="font-semibold">{c.item.item_name}</p>
-                          <p className="text-zinc-500 font-mono">${c.item.unit_price.toLocaleString()} x {c.quantity}</p>
-                        </div>
-                        <span className="font-mono text-emerald-400 font-bold">${(c.item.unit_price * c.quantity).toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* FIXED: Removed subtotal and VAT fields layout summary row blocks */}
-                <div className="border-t border-zinc-800 pt-3 space-y-2 font-mono text-xs">
-                  <div className="flex justify-between border-b border-zinc-800 pb-2 text-sm text-zinc-100 font-bold"><span>Total Due:</span><span className="text-emerald-400">${calculateCartTotals().total.toLocaleString()}</span></div>
-                  <div>
-                    <label className="block text-[10px] uppercase text-zinc-500 mb-1 font-bold">Cash Tended</label>
-                    <input type="number" value={cashReceived} onChange={(e) => setCashReceived(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-right font-mono text-emerald-400 focus:outline-none" placeholder="$0" />
-                  </div>
-                  {Number(cashReceived) >= calculateCartTotals().total && (
-                    <div className="flex justify-between text-emerald-400 font-bold py-1 bg-emerald-950/20 px-2 rounded border border-emerald-900/30"><span>Change:</span><span>${(Number(cashReceived) - calculateCartTotals().total).toLocaleString()}</span></div>
-                  )}
-                  <button onClick={processSaleCheckout} disabled={posCart.length === 0 || !canEditCurrentBranch} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white py-2.5 rounded font-bold uppercase text-xs tracking-wider transition">
-                    {canEditCurrentBranch ? 'Process Checkout' : '🔒 Checkout Locked'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: INVENTORY LOGISTICS */}
+          {/* TAB 5: INVENTORY LOGISTICS ENGINE */}
           {activeTab === 'inventory' && (
             <div className="space-y-6">
-              <form onSubmit={handleRegisterInventory} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
-                <div className="sm:col-span-2">
-                  <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Item Title</label>
-                  <input type="text" value={invName} onChange={(e) => setInvName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-red-600" placeholder="Protein Shake 500ml" required />
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Category</label>
-                  <select value={invCategory} onChange={(e) => setInvCategory(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-red-600">
-                    <option value="Supplements">Supplements</option>
-                    <option value="Beverages">Beverages</option>
-                    <option value="Gear/Apparel">Gear/Apparel</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase text-zinc-400 font-bold mb-1">Initial Stock</label>
-                  <input type="number" value={invStock} onChange={(e) => setInvStock(Number(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-red-600" />
-                </div>
-                <div>
-                  <button type="submit" disabled={!canEditCurrentBranch} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-bold py-1.5 rounded text-xs uppercase tracking-wide transition">Add Asset</button>
-                </div>
-              </form>
+              <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-red-500 mb-4">Add Regional Trading Product Stock</h2>
+                <form onSubmit={handleRegisterInventory} className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Item Label Description</label>
+                    <input type="text" value={invName} onChange={(e) => setInvName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-red-600" placeholder="Whey Isolate Protein 5lb" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Stock Count</label>
+                    <input type="number" value={invStock} onChange={(e) => setInvStock(Number(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-red-600" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Unit Price ($ GYD)</label>
+                    <input type="number" value={invPrice} onChange={(e) => setInvPrice(Number(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-red-600" />
+                  </div>
+                  <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded text-xs uppercase tracking-wider">Log Asset</button>
+                </form>
+              </div>
 
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
                 <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-zinc-950 border-b border-zinc-800 text-xs font-bold uppercase text-zinc-400">
-                      <th className="p-4">Item Name</th>
-                      <th className="p-4">Category</th>
-                      <th className="p-4 w-32">Stock Count</th>
-                      <th className="p-4 w-36">Retail Price ($)</th>
-                      <th className="p-4 w-24 text-center">Actions</th>
+                  <thead className="bg-zinc-950 border-b border-zinc-800 text-xs text-zinc-400">
+                    <tr>
+                      <th className="p-4">Asset Matrix Label</th>
+                      <th className="p-4 w-44">Category Segment</th>
+                      <th className="p-4 w-32">Unit Price</th>
+                      <th className="p-4 w-36">In-Stock Count</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs divide-y divide-zinc-800">
                     {inventory.map(i => (
                       <tr key={i.id} className="hover:bg-zinc-800/20">
-                        <td className="p-3"><input type="text" disabled={!canEditCurrentBranch} defaultValue={i.item_name} onBlur={(e) => updateInventoryRow(i.id, { item_name: e.target.value })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-full focus:outline-none font-medium disabled:text-zinc-400" /></td>
-                        <td className="p-3 text-zinc-400">{i.category}</td>
-                        <td className="p-3"><input type="number" disabled={!canEditCurrentBranch} defaultValue={i.stock_count} onBlur={(e) => updateInventoryRow(i.id, { stock_count: Number(e.target.value) })} className="bg-transparent border-b border-transparent focus:border-red-600 px-1 py-0.5 rounded w-20 focus:outline-none font-mono disabled:text-zinc-400" /></td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-1 bg-zinc-950/40 px-2 py-1 rounded border border-zinc-800 focus-within:border-red-600 max-w-[120px]">
-                            <span className="text-emerald-500 font-bold font-mono">$</span>
-                            <input type="number" disabled={!canEditCurrentBranch} defaultValue={i.unit_price} onBlur={(e) => updateInventoryRow(i.id, { unit_price: Number(e.target.value) })} className="bg-transparent w-full focus:outline-none font-mono text-emerald-400 font-bold text-xs disabled:text-zinc-500" />
-                          </div>
-                        </td>
-                        <td className="p-3 text-center">
-                          <button onClick={() => deleteInventoryItem(i.id, i.item_name)} disabled={!canEditCurrentBranch} className="bg-red-950/40 hover:bg-red-600 hover:text-white disabled:hover:bg-transparent disabled:text-zinc-600 border border-red-900/40 disabled:border-zinc-800 text-red-400 rounded p-1.5 px-2.5 font-bold transition text-[11px]">✕ Delete</button>
-                        </td>
+                        <td className="p-4 font-bold text-zinc-200">{i.item_name}</td>
+                        <td className="p-4 text-zinc-400">{i.category}</td>
+                        <td className="p-4 font-mono text-emerald-400">${i.unit_price}</td>
+                        <td className="p-4"><input type="number" disabled={!canEditCurrentBranch} defaultValue={i.stock_count} onBlur={(e) => updateInventoryRow(i.id, { stock_count: Number(e.target.value) })} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 w-20 text-center text-zinc-100 outline-none focus:border-red-600 disabled:bg-transparent disabled:border-transparent" /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -908,115 +959,224 @@ export default function LyftGymSystemMaster() {
             </div>
           )}
 
-          {/* TAB 6: ANALYTICS OVERVIEW */}
-          {activeTab === 'analytics' && (
+          {/* TAB 6: TRUCKING FLEET MANAGEMENT SECTION */}
+          {activeTab === 'trucking_fleet' && (
             <div className="space-y-6">
-              <div><h1 className="text-xl font-bold">{selectedBranch} Analytics</h1></div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Branch Profiles</span><div className="text-2xl font-black text-red-500 mt-1">{members.length} Accounts</div></div>
-                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">SKUs Tracked</span><div className="text-2xl font-black text-zinc-100 mt-1">{inventory.length} Units</div></div>
-                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl shadow-lg"><span className="text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Value Flow</span><div className="text-2xl font-black text-emerald-400 mt-1">${(inventory.reduce((sum, i) => sum + (i.stock_count * i.unit_price), 0) + (members.length * 15000)).toLocaleString()}</div></div>
+              <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-amber-500 mb-4">Deploy New Fleet Manifest Route</h2>
+                <form onSubmit={handleCreateWorkOrder} className="grid grid-cols-1 sm:grid-cols-5 gap-4 items-end">
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Truck License Plate</label>
+                    <input type="text" value={newPlate} onChange={(e) => setNewPlate(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-amber-500 text-white font-mono" placeholder="GAB 4432" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Driver's Name</label>
+                    <input type="text" value={newDriver} onChange={(e) => setNewDriver(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-amber-500" placeholder="Michael Anthony" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Regional Drop Node</label>
+                    <select value={newDest} onChange={(e) => setNewDest(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-amber-500 text-white">
+                      <option value="">Select Target Destination</option>
+                      {allBranches.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Cargo Specifications</label>
+                    <input type="text" value={newCargo} onChange={(e) => setNewCargo(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-amber-500" placeholder="Supplements Cargo" />
+                  </div>
+                  <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded text-xs uppercase tracking-wider transition">Dispatch Manifest</button>
+                </form>
+              </div>
+
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-zinc-950 border-b border-zinc-800 text-xs text-zinc-400">
+                    <tr>
+                      <th className="p-4">License Plate</th>
+                      <th className="p-4">Assigned Freight Driver</th>
+                      <th className="p-4">Cargo Particulars</th>
+                      <th className="p-4">Dropoff Terminal</th>
+                      <th className="p-4 w-44">Transit Flow Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-xs divide-y divide-zinc-800">
+                    {workOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-8 text-zinc-500 italic">No transport vectors logged.</td>
+                      </tr>
+                    ) : (
+                      workOrders.map(order => (
+                        <tr key={order.id} className="hover:bg-zinc-800/20">
+                          <td className="p-4 font-mono font-bold text-amber-400">{order.truck_plate}</td>
+                          <td className="p-4 text-zinc-200">{order.driver_name}</td>
+                          <td className="p-4 text-zinc-400">{order.cargo_type}</td>
+                          <td className="p-4 font-medium text-zinc-300">{order.destination}</td>
+                          <td className="p-4">
+                            <select value={order.dispatch_status} onChange={(e) => updateOrderStatus(order.id, e.target.value as any)} className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded px-2 py-1 outline-none focus:border-amber-500">
+                              <option value="Pending">Pending Dispatch</option>
+                              <option value="In Transit">In Transit</option>
+                              <option value="Delivered">Delivered Node</option>
+                            </select>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
 
-          {/* TAB 7: PRIVILEGED ADMIN USER PROVISIONING */}
+          {/* TAB 7: LOCAL SPREADSHEET PARSING MODULE */}
+          {activeTab === 'trucking_payroll' && (
+            <div className="space-y-6">
+              <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl max-w-xl">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-amber-500 mb-2">Ingest Operations Spreadsheet</h2>
+                <p className="text-xs text-zinc-400 mb-4 font-mono">Target: "April Payroll-Final" sheet data parsing array context filter criteria matches.</p>
+                
+                <form onSubmit={handleSpreadsheetIngest} className="space-y-4">
+                  <input type="file" accept=".xlsx, .xls" onChange={(e) => setExcelFile(e.target.files?.[0] || null)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs file:bg-zinc-800 file:border-0 file:text-white file:px-3 file:py-1 file:rounded file:text-xs file:mr-3 text-zinc-400" />
+                  <button type="submit" disabled={excelLoading || !excelFile} className="bg-amber-600 hover:bg-amber-700 disabled:bg-zinc-800 text-white font-bold py-2 px-4 rounded text-xs uppercase tracking-wider transition">
+                    {excelLoading ? 'Processing Local Workbook Payload...' : 'Synchronize Sheet Ledger Data'}
+                  </button>
+                </form>
+              </div>
+
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-zinc-950 border-b border-zinc-800 text-xs text-zinc-400">
+                    <tr>
+                      <th className="p-4">Logistics Personnel</th>
+                      <th className="p-4">Gross Compensation</th>
+                      <th className="p-4">NIS Deduct</th>
+                      <th className="p-4">PAYE Deduct</th>
+                      <th className="p-4">Net Payout</th>
+                      <th className="p-4">Frequency</th>
+                      <th className="p-4">Cycle Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-xs divide-y divide-zinc-800 font-mono">
+                    {payrollRecords.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center py-8 text-zinc-500 italic">No historical spreadsheets loaded into current session cache.</td>
+                      </tr>
+                    ) : (
+                      payrollRecords.map(rec => (
+                        <tr key={rec.id} className="hover:bg-zinc-800/20">
+                          <td className="p-4 font-sans font-bold text-zinc-200">{rec.employee_name}</td>
+                          <td className="p-4 text-zinc-400">${rec.gross_salary}</td>
+                          <td className="p-4 text-red-400">-${rec.nis_contribution}</td>
+                          <td className="p-4 text-red-400">-${rec.paye_deduction}</td>
+                          <td className="p-4 text-emerald-400 font-bold">${rec.net_pay}</td>
+                          <td className="p-4 text-zinc-500 font-sans">{rec.payment_frequency}</td>
+                          <td className="p-4 text-zinc-400">{rec.payroll_cycle_date}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 8: REGIONAL ACCESS ACCESS CONTROL MATRIX */}
           {activeTab === 'admin_mgmt' && currentUser?.access_all_locations && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-              
-              <form onSubmit={handleCreateAdmin} className="lg:col-span-1 bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4 shadow-xl">
-                <div>
-                  <h2 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">🔐 Provision Admin Credential</h2>
-                  <p className="text-xs text-zinc-500">Configure separate localized access matrices and roles.</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Full Real Name</label>
-                  <input type="text" value={admName} onChange={(e) => setAdmName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-2.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500" placeholder="Jane Smith" required />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Username / ID</label>
-                  <input type="text" value={admUsername} onChange={(e) => setAdmUsername(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-2.5 text-xs text-zinc-100 font-mono focus:outline-none focus:border-zinc-500" placeholder="receptionist_sheriff" required />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Security Access Key (Password)</label>
-                  <input type="password" value={admPassword} onChange={(e) => setAdmPassword(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded p-2.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500" placeholder="••••••••" required />
-                </div>
-
-                <div className="flex items-center gap-2 bg-zinc-950 p-3 rounded border border-zinc-800">
-                  <input type="checkbox" id="admAccessAll" checked={admAccessAll} onChange={(e) => setAdmAccessAll(e.target.checked)} className="accent-red-600 scale-110 cursor-pointer" />
-                  <label htmlFor="admAccessAll" className="text-xs font-bold text-red-400 cursor-pointer select-none">Universal Admin (All Locations + Edit Access)</label>
-                </div>
-
-                {!admAccessAll && (
-                  <div className="space-y-2 border-t border-zinc-800 pt-3">
-                    <label className="block text-xs text-zinc-400 font-bold uppercase tracking-wider mb-2">Location Node Permissions</label>
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                      {allBranches.map(branch => {
-                        const isChecked = admBranches.includes(branch);
-                        return (
-                          <div key={branch} className="bg-zinc-950/60 p-2.5 rounded border border-zinc-800 flex flex-col gap-2">
-                            <div className="flex items-center justify-between">
-                              <label className="text-xs font-medium text-zinc-200 flex items-center gap-2 cursor-pointer">
-                                <input type="checkbox" checked={isChecked} onChange={() => toggleAdmBranch(branch)} className="accent-zinc-100" />
-                                {branch}
-                              </label>
-                              {isChecked && <span className="text-[9px] bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400 uppercase font-mono">Assigned</span>}
-                            </div>
-                            
-                            {isChecked && (
-                              <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-zinc-900 p-1.5 rounded border border-zinc-800">
-                                <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name={`perm-${branch}`} checked={admPerms[branch] === 'view_only'} onChange={() => setAdmBranchPermLevel(branch, 'view_only')} /> View Only</label>
-                                <label className="flex items-center gap-1 cursor-pointer text-emerald-400 font-medium"><input type="radio" name={`perm-${branch}`} checked={admPerms[branch] === 'view_edit'} onChange={() => setAdmBranchPermLevel(branch, 'view_edit')} /> View & Edit</label>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl">
+                <h2 className="text-base font-bold uppercase tracking-wider text-zinc-200 mb-4">Deploy Multi-Location Operator</h2>
+                
+                <form onSubmit={handleCreateAdmin} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Full Identity Name</label>
+                      <input type="text" value={admName} onChange={(e) => setAdmName(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-zinc-500" placeholder="Admin Officer" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">System Identity Username</label>
+                      <input type="text" value={admUsername} onChange={(e) => setAdmUsername(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-zinc-500" placeholder="username" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Access Pass Key</label>
+                      <input type="password" value={admPassword} onChange={(e) => setAdmPassword(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none focus:border-zinc-500" placeholder="••••••••" />
                     </div>
                   </div>
-                )}
 
-                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wide transition">Provision Admin Profile</button>
-              </form>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-zinc-800/80 pt-4">
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase mb-1">Corporate Segment Allocation</label>
+                      <select value={admDept} onChange={(e) => setAdmDept(e.target.value as any)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs outline-none text-white">
+                        <option value="gym_operations">Fitness Floor Control Node</option>
+                        <option value="lyft_trucking">Logistics Freight Infrastructure</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center h-full pt-4">
+                      <label className="flex items-center gap-2 text-xs font-bold text-zinc-300 cursor-pointer">
+                        <input type="checkbox" checked={admAccessAll} onChange={(e) => setAdmAccessAll(e.target.checked)} className="rounded border-zinc-800 bg-zinc-950 accent-red-600" />
+                        Grant Universal Cross-Regional Authorization Rights
+                      </label>
+                    </div>
+                  </div>
 
-              <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-xl">
-                <div className="p-4 bg-zinc-950 border-b border-zinc-800">
-                  <h3 className="text-xs uppercase tracking-widest text-zinc-400 font-bold">Active System Admins Registry</h3>
-                </div>
-                <div className="divide-y divide-zinc-800">
-                  {systemAdmins.map(adm => (
-                    <div key={adm.id} className="p-4 hover:bg-zinc-800/10 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <span className="font-mono text-xs text-zinc-200 font-bold">👤 {adm.username}</span>
-                          {adm.name && <span className="text-zinc-500 text-xs block pl-5 font-sans">Name: {adm.name}</span>}
-                          {adm.role && <span className="text-zinc-500 text-[11px] block pl-5 font-mono">Role Key: {adm.role}</span>}
-                        </div>
-                        <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${adm.access_all_locations ? 'bg-red-950/50 text-red-400 border border-red-900/40' : 'bg-zinc-950 text-zinc-400 border border-zinc-800'}`}>
-                          {adm.access_all_locations ? '⭐ UNIVERSAL PRIVILEGES' : '⚓ LOCALLY RESTRICTED'}
-                        </span>
+                  {!admAccessAll && (
+                    <div className="border-t border-zinc-800/80 pt-4 space-y-3">
+                      <label className="block text-[11px] font-bold text-zinc-400 uppercase">Isolate Segment Branch Authorizations Matrix</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                        {allBranches.map(branch => {
+                          const isChecked = admBranches.includes(branch);
+                          return (
+                            <div key={branch} className="flex items-center justify-between p-1 bg-zinc-900/30 rounded px-2">
+                              <label className="flex items-center gap-2 text-xs font-medium text-zinc-300">
+                                <input type="checkbox" checked={isChecked} onChange={() => toggleAdmBranch(branch)} className="rounded border-zinc-800 bg-zinc-950 accent-red-600" />
+                                {branch}
+                              </label>
+                              
+                              {isChecked && (
+                                <select value={admPerms[branch] || 'view_only'} onChange={(e) => setAdmBranchPermLevel(branch, e.target.value as any)} className="bg-zinc-900 border border-zinc-700 text-[10px] rounded px-1.5 py-0.5 outline-none text-zinc-300">
+                                  <option value="view_only">Read Matrix Only</option>
+                                  <option value="view_edit">Full Read-Write</option>
+                                </select>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                      
-                      {!adm.access_all_locations && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {(adm.allowed_branches || []).map(b => {
-                            const isEditable = adm.branch_permissions?.[b] === 'view_edit';
-                            return (
-                              <span key={b} className={`text-[10px] px-2 py-0.5 rounded border font-medium ${isEditable ? 'bg-emerald-950/20 border-emerald-900/30 text-emerald-400' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
-                                {b} ({isEditable ? 'Write' : 'Read'})
-                              </span>
-                            );
-                          })}
+                    </div>
+                  )}
+
+                  <button type="submit" className="w-full bg-zinc-100 hover:bg-zinc-200 text-zinc-950 font-bold py-2.5 rounded text-xs uppercase tracking-wider transition">Deploy Access Permission Set</button>
+                </form>
+              </div>
+
+              {/* View Active Profile Configurations */}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                <div className="p-4 bg-zinc-950 border-b border-zinc-800 font-bold text-xs uppercase tracking-wider text-zinc-400">Deployed Internal System Operators</div>
+                <div className="divide-y divide-zinc-800">
+                  {systemAdmins.map(admin => (
+                    <div key={admin.id} className="p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-2 text-xs">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-zinc-100">{admin.name}</span>
+                          <span className="text-[10px] bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400 font-mono">@{admin.username}</span>
                         </div>
-                      )}
+                        <p className="text-[11px] text-zinc-500 mt-0.5">Segment: <span className="text-zinc-400 font-mono">{admin.department}</span></p>
+                      </div>
+                      <div className="text-right text-[11px]">
+                        {admin.access_all_locations ? (
+                          <span className="text-emerald-400 font-bold font-mono">UNIVERSAL ACCESS</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1 justify-end max-w-xs">
+                            {admin.allowed_branches?.map(b => (
+                              <span key={b} className="bg-zinc-950 px-1.5 py-0.5 rounded text-[10px] border border-zinc-800 text-zinc-400">
+                                {b} ({admin.branch_permissions?.[b] === 'view_edit' ? 'R/W' : 'R'})
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
-
             </div>
           )}
 
