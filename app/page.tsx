@@ -469,6 +469,59 @@ export default function UnifiedSystemMatrix() {
   const filteredMembers = gymMembers.filter(m => hasGlobalLocationOverride ? m.assigned_branch === activeBranchContext : m.assigned_branch === currentUser?.assigned_branch);
   const filteredTrainers = trainers.filter(t => hasGlobalLocationOverride ? t.assigned_branch === activeBranchContext : t.assigned_branch === currentUser?.assigned_branch);
 
+  // --- Unauthenticated Screen Render Gate ---
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-6 select-none font-sans">
+        <div className="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-xl p-8 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-600 via-orange-600 to-red-600"></div>
+          <div className="flex flex-col items-center mb-6">
+            <div className="w-12 h-12 bg-neutral-950 rounded-lg flex items-center justify-center border border-neutral-800 mb-3 shadow">
+              <Dumbbell className="w-6 h-6 text-red-600 animate-pulse" />
+            </div>
+            <h2 className="text-xl font-black text-white uppercase tracking-wider">LYFT Central Matrix Matrix</h2>
+            <p className="text-xs text-neutral-500 font-mono tracking-tight mt-1 uppercase">Terminal Gateway Node Authentication</p>
+          </div>
+
+          <form onSubmit={handleSystemLogin} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-mono text-neutral-400 uppercase tracking-widest mb-1.5">Secure Operator Username</label>
+              <input 
+                type="text" 
+                required 
+                value={authUsername} 
+                onChange={(e) => setAuthUsername(e.target.value)} 
+                className="w-full bg-neutral-950 border border-neutral-800 rounded p-2.5 text-sm text-white focus:outline-none focus:border-red-600 font-mono" 
+                placeholder="operator_id"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono text-neutral-400 uppercase tracking-widest mb-1.5">Secure Passcode Segment</label>
+              <input 
+                type="password" 
+                required 
+                value={authPassword} 
+                onChange={(e) => setAuthPassword(e.target.value)} 
+                className="w-full bg-neutral-950 border border-neutral-800 rounded p-2.5 text-sm text-white focus:outline-none focus:border-red-600 font-mono" 
+                placeholder="•••••••••"
+              />
+            </div>
+
+            {authError && (
+              <div className="p-3 bg-red-950/50 border border-red-900 text-red-400 rounded text-xs flex items-center gap-2 font-mono">
+                <ShieldAlert className="w-4 h-4 shrink-0" /> {authError}
+              </div>
+            )}
+
+            <button type="submit" className="w-full bg-red-600 hover:bg-red-700 font-bold uppercase text-xs tracking-wider text-white py-3 rounded border border-red-500 transition-all shadow-lg shadow-red-900/10">
+              Authorize Device Connection
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex font-sans select-none">
       
@@ -674,103 +727,97 @@ export default function UnifiedSystemMatrix() {
               <p className="text-xs text-neutral-400 mt-1">Enroll clean profile targets into the active tracking layout node ({activeBranchContext}).</p>
             </div>
             <form onSubmit={handleRegisterMember} className="p-6 space-y-4 text-sm">
-              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs text-neutral-400 font-mono uppercase">Full Identity Name</label>
-                  <input type="text" value={memberForm.full_name} onChange={e => setMemberForm({...memberForm, full_name: e.target.value, assigned_branch: activeBranchContext})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" placeholder="John Doe" required />
+                <div>
+                  <label className="text-neutral-400 font-mono uppercase tracking-wider block mb-1">Target Profile Name</label>
+                  <input 
+                    type="text" required 
+                    value={memberForm.full_name} 
+                    onChange={e => setMemberForm(prev => ({ ...prev, full_name: e.target.value }))}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono" 
+                  />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-neutral-400 font-mono uppercase">Phone Contact Handle</label>
-                  <input type="text" value={memberForm.phone} onChange={e => setMemberForm({...memberForm, phone: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" placeholder="+592-600-0000" required />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs text-neutral-400 font-mono uppercase">Email Communication Address</label>
-                  <input type="email" value={memberForm.email} onChange={e => setMemberForm({...memberForm, email: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" placeholder="johndoe@gmail.com" required />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-neutral-400 font-mono uppercase">Home Residence Street Address</label>
-                  <input type="text" value={memberForm.address} onChange={e => setMemberForm({...memberForm, address: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" placeholder="Lot 123 Public Road, Georgetown" required />
-                </div>
-              </div>
-
-              {/* RESTORED LIVE MEDIA WEBCAM FRAME MODULE */}
-              <div className="bg-neutral-950 p-4 border border-neutral-850 rounded-lg space-y-3">
-                <label className="text-xs text-neutral-400 font-mono uppercase block">Profile Security Photo Asset Integration</label>
-                
-                <div className="flex flex-col sm:flex-row gap-4 items-center">
-                  <div className="w-32 h-32 bg-neutral-900 border border-neutral-800 rounded-lg flex items-center justify-center overflow-hidden relative">
-                    {memberForm.photo_url ? (
-                      <img src={memberForm.photo_url} alt="Profile Asset" className="w-full h-full object-cover" />
-                    ) : (
-                      <Camera className="w-8 h-8 text-neutral-700" />
-                    )}
-                  </div>
-
-                  <div className="flex-1 space-y-2 w-full">
-                    {!isWebcamActive ? (
-                      <button type="button" onClick={startWebcamStream} className="w-full sm:w-auto bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 text-xs font-bold px-3 py-2 rounded flex items-center justify-center gap-1.5 transition-all">
-                        <Camera className="w-4 h-4 text-red-500" /> Activate Device Webcam
-                      </button>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="border border-neutral-800 rounded overflow-hidden bg-black w-full max-w-[240px]">
-                          <video ref={videoRef} autoPlay playsInline className="w-full h-auto scale-x-[-1]" />
-                        </div>
-                        <div className="flex gap-2">
-                          <button type="button" onClick={captureWebcamSnapshot} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded transition-all">
-                            Capture Profile Frame
-                          </button>
-                          <button type="button" onClick={stopWebcamStream} className="bg-neutral-800 hover:bg-neutral-700 text-neutral-400 text-xs px-2 py-1.5 rounded transition-all">
-                            Kill Stream
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    <div className="text-[10px] text-neutral-500 font-mono">Or supply direct URL asset reference location link below:</div>
-                    <input type="text" value={memberForm.photo_url} onChange={e => setMemberForm({...memberForm, photo_url: e.target.value})} className="w-full bg-neutral-900 border border-neutral-800 p-2 rounded text-xs text-white font-mono focus:outline-none focus:border-red-600" placeholder="https://images.com/manual-link.jpg" />
-                  </div>
+                <div>
+                  <label className="text-neutral-400 font-mono uppercase tracking-wider block mb-1">Phone Contact</label>
+                  <input 
+                    type="text" required 
+                    value={memberForm.phone} 
+                    onChange={e => setMemberForm(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono" 
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs text-neutral-400 font-mono uppercase">What Is Your Goal In The Gym?</label>
-                  <select value={memberForm.fitness_goal} onChange={e => setMemberForm({...memberForm, fitness_goal: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white text-xs focus:outline-none focus:border-red-600">
-                    <option>Weight Loss / Toning</option>
-                    <option>Hypertrophy / Muscle Mass</option>
-                    <option>Powerlifting Strength Core Focus</option>
-                    <option>Cardiovascular Endurance / HIIT</option>
-                    <option>General Fitness Maintenance</option>
+                <div>
+                  <label className="text-neutral-400 font-mono uppercase tracking-wider block mb-1">E-Mail Identity</label>
+                  <input 
+                    type="email" 
+                    value={memberForm.email} 
+                    onChange={e => setMemberForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono" 
+                  />
+                </div>
+                <div>
+                  <label className="text-neutral-400 font-mono uppercase tracking-wider block mb-1">Physical Address</label>
+                  <input 
+                    type="text" 
+                    value={memberForm.address} 
+                    onChange={e => setMemberForm(prev => ({ ...prev, address: e.target.value }))}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono" 
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div>
+                  <label className="text-neutral-400 font-mono uppercase tracking-wider block mb-1">Membership Plan</label>
+                  <select 
+                    value={memberForm.membership_type} 
+                    onChange={e => setMemberForm(prev => ({ ...prev, membership_type: e.target.value }))}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono text-xs"
+                  >
+                    <option value="Full Access VIP">Full Access VIP</option>
+                    <option value="Regular Gym Core">Regular Gym Core</option>
+                    <option value="Fortnightly Pass">Fortnightly Pass</option>
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-neutral-400 font-mono uppercase">Plan Matrix Tier</label>
-                  <select value={memberForm.membership_type} onChange={e => setMemberForm({...memberForm, membership_type: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white text-xs focus:outline-none focus:border-red-600">
-                    <option>Full Access VIP</option>
-                    <option>Fortnightly Regular</option>
-                    <option>Monthly Corporate Plan</option>
-                    <option>Basic Open Gym</option>
+                <div>
+                  <label className="text-neutral-400 font-mono uppercase tracking-wider block mb-1">Fitness Target Strategy</label>
+                  <select 
+                    value={memberForm.fitness_goal} 
+                    onChange={e => setMemberForm(prev => ({ ...prev, fitness_goal: e.target.value }))}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono text-xs"
+                  >
+                    <option value="Weight Loss / Toning">Weight Loss / Toning</option>
+                    <option value="Hypertrophy / Muscularity">Hypertrophy / Muscularity</option>
+                    <option value="Powerlifting / Strength">Powerlifting / Strength</option>
+                    <option value="Cardio Fitness / Stamina">Cardio Fitness / Stamina</option>
                   </select>
                 </div>
               </div>
 
-              {/* RESTORED TRAINING ASSIGNMENT STEP ROUTERS */}
-              <div className="bg-neutral-950 p-4 border border-neutral-850 rounded-lg space-y-3">
-                <div className="flex items-center gap-3">
-                  <input type="checkbox" id="needTrainerCheckbox" checked={memberForm.needs_trainer} onChange={e => setMemberForm({...memberForm, needs_trainer: e.target.checked, assigned_trainer_id: e.target.checked ? trainers[0]?.id || "" : ""})} className="accent-red-600 w-4 " />
-                  <label htmlFor="needTrainerCheckbox" className="text-xs font-mono uppercase tracking-wide text-neutral-300 cursor-pointer select-none">
-                    Do you need an active personal fitness trainer assigned to this profile?
-                  </label>
+              <div className="p-4 bg-neutral-950 rounded-lg border border-neutral-850 space-y-3">
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    id="needs_trainer"
+                    checked={memberForm.needs_trainer} 
+                    onChange={e => setMemberForm(prev => ({ ...prev, needs_trainer: e.target.checked }))}
+                    className="accent-red-600 w-4 h-4"
+                  />
+                  <label htmlFor="needs_trainer" className="text-xs text-neutral-300 font-bold uppercase tracking-wide">Attach Specialized Coaching Asset Pair</label>
                 </div>
 
                 {memberForm.needs_trainer && (
-                  <div className="space-y-1 animate-fadeIn pt-1">
-                    <label className="text-[11px] text-red-400 font-mono uppercase tracking-wider block">Select Active Coach Asset</label>
-                    <select value={memberForm.assigned_trainer_id} onChange={e => setMemberForm({...assigned_trainer_id, assigned_trainer_id: e.target.value})} className="w-full bg-neutral-900 border border-neutral-800 p-2 rounded text-xs text-white focus:outline-none focus:border-red-600">
+                  <div className="pt-1">
+                    <label className="text-neutral-400 font-mono uppercase tracking-wider block mb-1 text-xs">Select Active Coach Asset</label>
+                    <select 
+                      value={memberForm.assigned_trainer_id} 
+                      onChange={e => setMemberForm(prev => ({ ...prev, assigned_trainer_id: e.target.value }))}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono text-xs"
+                    >
+                      <option value="">-- No Coach (Independent Access) --</option>
                       {trainers.map(t => (
                         <option key={t.id} value={t.id}>{t.name} — {t.tier} ({t.assigned_branch})</option>
                       ))}
@@ -779,511 +826,707 @@ export default function UnifiedSystemMatrix() {
                 )}
               </div>
 
-              <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded transition-all tracking-wider uppercase text-xs shadow-lg shadow-red-900/10">
-                Commit Complete Profile Ingestion
+              {/* LIVE CAM SECTION */}
+              <div className="p-4 bg-neutral-950 rounded-lg border border-neutral-850 space-y-3">
+                <label className="text-xs font-mono uppercase tracking-wider text-neutral-400 block">Biometric ID Snapshot Capture Frame</label>
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <div className="w-32 h-32 bg-neutral-900 rounded border border-neutral-800 flex items-center justify-center overflow-hidden shrink-0 relative">
+                    {memberForm.photo_url ? (
+                      <img src={memberForm.photo_url} alt="" className="w-full h-full object-cover" />
+                    ) : isWebcamActive ? (
+                      <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover transform scale-x-[-1]"></video>
+                    ) : (
+                      <Camera className="w-8 h-8 text-neutral-700" />
+                    )}
+                  </div>
+                  
+                  <div className="space-y-2 w-full">
+                    {!isWebcamActive ? (
+                      <button type="button" onClick={startWebcamStream} className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold rounded border border-neutral-700 flex items-center gap-1.5 transition-all">
+                        <RefreshCw className="w-3.5 h-3.5" /> Launch Device Camera Asset
+                      </button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button type="button" onClick={captureWebcamSnapshot} className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded flex items-center gap-1.5 transition-all">
+                          <Camera className="w-3.5 h-3.5" /> Trigger Snapshot
+                        </button>
+                        <button type="button" onClick={stopWebcamStream} className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 text-xs font-bold rounded transition-all">
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-neutral-500 leading-relaxed font-mono">Uses hardware video pipelines to render a raw base64 frame mapping matrix layout directly to database table parameters.</p>
+                  </div>
+                </div>
+              </div>
+
+              <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider py-3 rounded transition-all border border-red-500 shadow-xl">
+                Commit Identity Matrix Into Supabase Rows
               </button>
             </form>
           </div>
         )}
 
-        {/* NEW SYSTEM VIEW: SUPABASE BACKED INVENTORY MANAGEMENT CONTROLLER */}
+        {/* VIEW D: INVENTORY LEDGER CONTROL */}
         {currentTab === "inventory_ledger" && (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl">
-              <div className="p-5 bg-neutral-850 border-b border-neutral-800 font-bold text-xs uppercase tracking-wide text-white">
-                Inject Product Stock Row
-              </div>
-              <form onSubmit={handleAddInventory} className="p-5 space-y-4 text-xs">
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Product Stock Display Name</label>
-                  <input type="text" value={inventoryForm.name} onChange={e => setInventoryForm({...inventoryForm, name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" placeholder="e.g. Mass Gainer Shake (Vanilla)" required />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-neutral-400 font-mono uppercase">Unit Price (GYD)</label>
-                    <input type="number" value={inventoryForm.price || ""} onChange={e => setInventoryForm({...inventoryForm, price: parseInt(e.target.value) || 0})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 font-mono" placeholder="1500" required />
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+              <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl space-y-4 md:col-span-1">
+                <h3 className="text-sm font-black text-white uppercase font-mono tracking-wider">Inject SKU Stock Entry</h3>
+                <form onSubmit={handleAddInventory} className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-neutral-400 font-mono uppercase block mb-1">Product Item Label</label>
+                    <input 
+                      type="text" required 
+                      value={inventoryForm.name}
+                      onChange={e => setInventoryForm(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono" 
+                      placeholder="e.g. Whey Protein Isolate 2lb"
+                    />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-neutral-400 font-mono uppercase">Starting Quantity</label>
-                    <input type="number" value={inventoryForm.quantity || ""} onChange={e => setInventoryForm({...inventoryForm, quantity: parseInt(e.target.value) || 0})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 font-mono" placeholder="25" required />
+                  <div>
+                    <label className="text-neutral-400 font-mono uppercase block mb-1">Price Ring (GYD)</label>
+                    <input 
+                      type="number" required 
+                      value={inventoryForm.price || ""}
+                      onChange={e => setInventoryForm(prev => ({ ...prev, price: parseFloat(e.target.value) || 0 }))}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono" 
+                    />
                   </div>
-                </div>
-                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold p-2.5 rounded text-center transition-all uppercase tracking-wider text-[11px]">
-                  Commit Stock SKU
-                </button>
-              </form>
-            </div>
-
-            <div className="xl:col-span-2 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
-              <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-bold text-xs uppercase tracking-wider text-white flex justify-between items-center">
-                <span>Warehouse Bar Ledger Matrix</span>
-                <button onClick={fetchInventoryData} className="text-neutral-400 hover:text-white inline-flex items-center gap-1 text-[10px] font-mono">
-                  <RefreshCw className="w-3 h-3" /> Sync Supabase
-                </button>
-              </div>
-              <table className="w-full text-left text-xs text-neutral-400">
-                <thead className="bg-neutral-950 font-mono text-neutral-500 uppercase">
-                  <tr>
-                    <th className="p-3">Product Name Structure</th>
-                    <th className="p-3">Unit Valuation</th>
-                    <th className="p-3 text-center">In-Stock Volume</th>
-                    <th className="p-3 text-right">Ledger Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-800 font-mono">
-                  {inventoryItems.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="p-8 text-center italic text-neutral-600 font-sans">No product rows returned from the Supabase inventory ledger.</td>
-                    </tr>
-                  ) : (
-                    inventoryItems.map(item => (
-                      <tr key={item.id} className="hover:bg-neutral-850/40">
-                        <td className="p-3 text-neutral-200 font-bold font-sans">{item.name}</td>
-                        <td className="p-3 text-red-500 font-bold">${item.price.toLocaleString()} GYD</td>
-                        <td className="p-3">
-                          <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => handleUpdateStockQty(item.id, item.quantity - 1)} className="bg-neutral-950 border border-neutral-800 px-1.5 py-0.5 rounded text-neutral-400 hover:text-white">-</button>
-                            <span className={`w-8 text-center font-bold ${item.quantity === 0 ? 'text-red-500 animate-pulse' : 'text-neutral-300'}`}>{item.quantity}</span>
-                            <button onClick={() => handleUpdateStockQty(item.id, item.quantity + 1)} className="bg-neutral-950 border border-neutral-800 px-1.5 py-0.5 rounded text-neutral-400 hover:text-white">+</button>
-                          </div>
-                        </td>
-                        <td className="p-3 text-right">
-                          <button onClick={() => handleDeleteInventoryItem(item.id)} className="bg-neutral-950 hover:bg-red-950 text-red-400 border border-neutral-800 hover:border-red-900 p-1 rounded transition-all">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW D: POINT OF SALE MODULE (POOLS LIVE DATA FROM SUPABASE) */}
-        {currentTab === "gym_pos" && (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
-            <div className="xl:col-span-2 bg-neutral-900 border border-neutral-800 rounded-xl p-6 space-y-4">
-              <div>
-                <h3 className="text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
-                  <Tag className="w-5 h-5 text-red-500" />
-                  Matrix Inventory Bar Counter
-                </h3>
-                <p className="text-xs text-neutral-400 mt-0.5">Select real stock rows pooled from Supabase to compile parameters onto checkout.</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {inventoryItems.map((prod) => (
-                  <div key={prod.id} className="bg-neutral-950 border border-neutral-800 p-4 rounded-lg flex justify-between items-center hover:border-neutral-700 transition-all">
-                    <div>
-                      <h4 className="text-sm font-bold text-neutral-200">{prod.name}</h4>
-                      <div className="text-xs text-red-500 font-mono font-bold mt-1">${prod.price.toLocaleString()} GYD</div>
-                      <div className="text-[10px] text-neutral-500 font-mono mt-0.5">Avail: {prod.quantity} units</div>
-                    </div>
-                    <button onClick={() => addToCart(prod)} disabled={prod.quantity <= 0} className={`px-3 py-1.5 rounded text-xs font-bold font-mono transition-all ${prod.quantity > 0 ? 'bg-neutral-900 hover:bg-red-600 border border-neutral-800 hover:border-red-600 text-neutral-300 hover:text-white' : 'bg-neutral-950 text-neutral-700 border border-neutral-900 cursor-not-allowed'}`}>
-                      {prod.quantity > 0 ? "+ Stage" : "Stock Out"}
-                    </button>
+                  <div>
+                    <label className="text-neutral-400 font-mono uppercase block mb-1">Opening Quantity Matrix</label>
+                    <input 
+                      type="number" required 
+                      value={inventoryForm.quantity || ""}
+                      onChange={e => setInventoryForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono" 
+                    />
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl">
-              <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-bold text-xs uppercase text-white flex items-center justify-between">
-                <span>Active Ledger Checkout</span>
-                <span className="font-mono bg-neutral-950 px-2 py-0.5 rounded text-red-400">{posCart.length} Lines</span>
-              </div>
-              <div className="p-4 space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-neutral-400 font-mono uppercase">Client/Target Identifier Reference</label>
-                  <input type="text" value={posCustomerName} onChange={e => setPosCustomerName(e.target.value)} placeholder="Walk-In Base Target" className="w-full bg-neutral-950 border border-neutral-800 p-2 rounded text-xs text-white focus:outline-none focus:border-red-600" />
-                </div>
-
-                <div className="divide-y divide-neutral-800 border-t border-b border-neutral-800 py-2 max-h-48 overflow-y-auto font-mono text-xs">
-                  {posCart.length === 0 ? (
-                    <div className="text-center text-neutral-600 py-6 italic font-sans">Basket layout empty.</div>
-                  ) : (
-                    posCart.map(item => (
-                      <div key={item.id} className="flex justify-between items-center py-2">
-                        <div className="max-w-[180px] truncate">
-                          <span className="text-neutral-200 font-sans font-bold">{item.name}</span>
-                          <div className="text-[10px] text-neutral-500">${item.price} x {item.quantity}</div>
-                        </div>
-                        <span className="text-neutral-300 font-bold">${(item.price * item.quantity).toLocaleString()}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="space-y-3 font-mono text-xs">
-                  <div className="flex justify-between text-sm font-bold text-white bg-neutral-950 p-2.5 rounded border border-neutral-800">
-                    <span>COUNTER DUE TOTAL:</span>
-                    <span className="text-red-500">${calculateCartTotal().toLocaleString()} GYD</span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-neutral-400 font-mono uppercase">Tender Gateway Route</label>
-                    <select value={posPaymentMethod} onChange={e => setPosPaymentMethod(e.target.value)} className="w-full bg-neutral-950 border border-neutral-800 p-2 rounded text-xs text-white focus:outline-none focus:border-red-600">
-                      <option>Cash Tender</option>
-                      <option>MMG Mobile Wallet Gateway</option>
-                      <option>Bank Debit Card Terminal POS</option>
-                    </select>
-                  </div>
-
-                  <button onClick={handleProcessCheckout} disabled={posCart.length === 0} className={`w-full p-2.5 rounded text-xs font-bold text-white text-center uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${posCart.length > 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-neutral-850 text-neutral-600 border border-neutral-800 cursor-not-allowed'}`}>
-                    <CreditCard className="w-3.5 h-3.5" /> Finalize Transaction
+                  <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded text-xs uppercase transition-all flex items-center justify-center gap-1">
+                    <Plus className="w-4 h-4" /> Save Warehouse SKU
                   </button>
+                </form>
+              </div>
+
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden md:col-span-2">
+                <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-mono text-xs uppercase text-neutral-300 font-bold">
+                  Central Bar Inventory Registry Matrix
                 </div>
+                <table className="w-full text-left text-xs text-neutral-400">
+                  <thead className="bg-neutral-950 font-mono text-neutral-500 uppercase">
+                    <tr>
+                      <th className="p-3">SKU Identifier</th>
+                      <th className="p-3">Unit Tag Price</th>
+                      <th className="p-3">Stock Units Available</th>
+                      <th className="p-3 text-right">Row Purge Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-800 font-mono">
+                    {inventoryItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="p-6 text-center italic text-neutral-600">Zero active stock records loaded from Supabase context framework.</td>
+                      </tr>
+                    ) : (
+                      inventoryItems.map((item) => (
+                        <tr key={item.id} className="hover:bg-neutral-850/40">
+                          <td className="p-3 text-neutral-200 font-sans font-bold">{item.name}</td>
+                          <td className="p-3 text-amber-500 font-bold">${item.price.toLocaleString()} GYD</td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-bold font-mono px-2 py-0.5 rounded ${item.quantity <= 3 ? "bg-red-950 text-red-400 border border-red-900" : "text-emerald-400"}`}>
+                                {item.quantity} Units Left
+                              </span>
+                              <button onClick={() => handleUpdateStockQty(item.id, item.quantity + 5)} className="px-1.5 py-0.5 bg-neutral-800 text-neutral-300 border border-neutral-700 rounded text-[10px] font-bold hover:text-white hover:bg-neutral-700">
+                                +5 Stock
+                              </button>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right">
+                            <button onClick={() => handleDeleteInventoryItem(item.id)} className="text-neutral-600 hover:text-red-400 p-1 transition-all">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
         )}
 
-        {/* VIEW E: TRAINER ROSTER MANAGER WITH EXTENDED EDIT / ASSIGN ARCHITECTURE */}
-        {currentTab === "gym_trainers" && (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl">
-              <div className="p-5 bg-neutral-850 border-b border-neutral-800 font-bold text-xs uppercase tracking-wide text-white flex justify-between items-center">
-                <span>{editingTrainer ? "Modify Coach Metrics" : "Inject Trainer Asset"}</span>
-                {editingTrainer && (
-                  <button onClick={() => setEditingTrainer(null)} className="text-neutral-400 hover:text-white text-[10px] bg-neutral-950 border border-neutral-800 px-2 py-0.5 rounded">Cancel</button>
+        {/* VIEW E: MATRIX POINT OF SALE */}
+        {currentTab === "gym_pos" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            {/* Products Array Selector Frame */}
+            <div className="lg:col-span-7 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+              <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-mono text-xs uppercase text-neutral-300 font-black tracking-wider">
+                Select Inventory Rows to Basket Add
+              </div>
+              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {inventoryItems.map(product => (
+                  <button 
+                    key={product.id} 
+                    onClick={() => addToCart(product)}
+                    disabled={product.quantity <= 0}
+                    className="p-3.5 bg-neutral-950 border border-neutral-800 rounded-lg text-left hover:border-red-600 group transition-all disabled:opacity-40 disabled:hover:border-neutral-800"
+                  >
+                    <div className="text-xs font-bold text-neutral-200 group-hover:text-red-500 transition-all truncate">{product.name}</div>
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="text-xs text-amber-500 font-mono font-bold">${product.price.toLocaleString()} GYD</span>
+                      <span className="text-[10px] font-mono text-neutral-500">Qty: {product.quantity}</span>
+                    </div>
+                  </button>
+                ))}
+                {inventoryItems.length === 0 && (
+                  <div className="col-span-2 text-center py-6 italic text-neutral-600 font-mono text-xs">No warehouse inventories instantiated to list inside register.</div>
                 )}
               </div>
-              <form onSubmit={handleAddOrUpdateTrainer} className="p-5 space-y-4 text-xs">
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Trainer Full Name</label>
-                  <input type="text" value={editingTrainer ? editingTrainer.name : trainerForm.name} onChange={e => editingTrainer ? setEditingTrainer({...editingTrainer, name: e.target.value}) : setTrainerForm({...trainerForm, name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 font-sans" placeholder="e.g. Ravin Mahabal" required />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Specialty Framework Parameters</label>
-                  <input type="text" value={editingTrainer ? editingTrainer.specialty : trainerForm.specialty} onChange={e => editingTrainer ? setEditingTrainer({...editingTrainer, specialty: e.target.value}) : setTrainerForm({...trainerForm, specialty: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 font-sans" placeholder="e.g. HIIT Strength / Bodybuilding" required />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Assigned Location Node Access</label>
-                  <select value={editingTrainer ? editingTrainer.assigned_branch : trainerForm.assigned_branch} onChange={e => editingTrainer ? setEditingTrainer({...editingTrainer, assigned_branch: e.target.value}) : setTrainerForm({...trainerForm, assigned_branch: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600">
-                    <option>Sheriff Street</option>
-                    <option>Main Street</option>
-                    <option>Tower Node</option>
-                    <option>Mahaica Branch</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Roster Tier Placement Ranking</label>
-                  <select value={editingTrainer ? editingTrainer.tier : trainerForm.tier} onChange={e => editingTrainer ? setEditingTrainer({...editingTrainer, tier: e.target.value}) : setTrainerForm({...trainerForm, tier: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600">
-                    <option>Elite Tier 1</option>
-                    <option>Senior Coach Tier 2</option>
-                    <option>Junior Associate Matrix</option>
-                  </select>
-                </div>
-                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold p-2.5 rounded transition-all uppercase text-[11px] tracking-wider">
-                  {editingTrainer ? "Apply Parameter Matrix" : "Save Trainer Profile"}
-                </button>
-              </form>
             </div>
 
-            <div className="xl:col-span-2 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
-              <div className="p-4 bg-neutral-850 font-bold text-xs uppercase tracking-wider text-white border-b border-neutral-800">
-                Authorized System Coaching Grid ({activeBranchContext})
-              </div>
-              <table className="w-full text-left text-xs text-neutral-400">
-                <thead className="bg-neutral-950 text-neutral-500 font-mono uppercase">
-                  <tr>
-                    <th className="p-3">Coach Blueprint</th>
-                    <th className="p-3">Specialty Parameters</th>
-                    <th className="p-3">Location Node</th>
-                    <th className="p-3 text-red-500">Tier Profile</th>
-                    <th className="p-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-800 font-mono">
-                  {filteredTrainers.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center italic text-neutral-600 font-sans">No staff alignments cataloged under {activeBranchContext} network parameters.</td>
-                    </tr>
-                  ) : (
-                    filteredTrainers.map((t) => (
-                      <tr key={t.id} className="hover:bg-neutral-850/40">
-                        <td className="p-3 font-sans font-bold text-neutral-200">{t.name}</td>
-                        <td className="p-3 font-sans text-neutral-300">{t.specialty}</td>
-                        <td className="p-3 font-sans text-neutral-400">{t.assigned_branch}</td>
-                        <td className="p-3 text-red-500 font-bold">{t.tier}</td>
-                        <td className="p-3 text-right">
-                          <button onClick={() => setEditingTrainer(t)} className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 px-2 py-1 rounded text-[10px] inline-flex items-center gap-1 transition-all">
-                            <Edit3 className="w-3 h-3" /> Edit / Assign
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+            {/* Shopping Checkout Basket Panel */}
+            <div className="lg:col-span-5 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden flex flex-col justify-between">
+              <div>
+                <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-mono text-xs uppercase text-neutral-300 font-black tracking-wider flex items-center justify-between">
+                  <span>Active Ring Checkout Basket</span>
+                  <span className="bg-neutral-950 border border-neutral-800 px-2 py-0.5 rounded text-[10px] text-red-400 font-mono">{posCart.length} lines</span>
+                </div>
+
+                <div className="divide-y divide-neutral-850 p-4 space-y-2">
+                  {posCart.map(item => (
+                    <div key={item.id} className="flex justify-between items-center py-1.5 text-xs font-mono">
+                      <div>
+                        <div className="font-sans font-bold text-neutral-200 text-xs">{item.name}</div>
+                        <div className="text-[10px] text-neutral-500 mt-0.5">${item.price.toLocaleString()} x {item.quantity}</div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-neutral-200 font-bold">${(item.price * item.quantity).toLocaleString()} GYD</span>
+                        <button onClick={() => setPosCart(prev => prev.filter(i => i.id !== item.id))} className="text-neutral-600 hover:text-red-400 text-xs font-sans">✕</button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {posCart.length === 0 && (
+                    <div className="text-center py-8 italic text-neutral-600 font-mono text-xs">Basket queue is clear. Inject product blocks from left array layout.</div>
                   )}
-                </tbody>
-              </table>
+                </div>
+              </div>
+
+              {posCart.length > 0 && (
+                <div className="p-4 bg-neutral-950 border-t border-neutral-800 space-y-4">
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[10px] font-mono text-neutral-500 uppercase block mb-1">Customer Identification Tag</label>
+                      <input 
+                        type="text" 
+                        value={posCustomerName}
+                        onChange={e => setPosCustomerName(e.target.value)}
+                        className="w-full bg-neutral-900 border border-neutral-850 rounded p-2 text-xs font-mono text-white focus:outline-none focus:border-red-600" 
+                        placeholder="Walk-In Gym Client"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-mono text-neutral-500 uppercase block mb-1">Payment Channel Logic</label>
+                      <select 
+                        value={posPaymentMethod}
+                        onChange={e => setPosPaymentMethod(e.target.value)}
+                        className="w-full bg-neutral-900 border border-neutral-850 rounded p-2 text-xs font-mono text-white focus:outline-none focus:border-red-600"
+                      >
+                        <option value="Cash Tender">Cash Tender</option>
+                        <option value="MMG Electronic Pay">MMG Electronic Pay</option>
+                        <option value="POS Terminal Card Ring">POS Terminal Card Ring</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-neutral-850 flex justify-between items-center">
+                    <span className="text-xs uppercase text-neutral-400 font-mono font-bold">Total Aggregated Ring:</span>
+                    <span className="text-xl font-black font-mono text-red-500">${calculateCartTotal().toLocaleString()} GYD</span>
+                  </div>
+
+                  <button onClick={handleProcessCheckout} className="w-full bg-emerald-600 hover:bg-emerald-700 font-black text-xs uppercase tracking-wider text-white py-3 rounded transition-all shadow-md">
+                    Process Transaction Ring & Finalize
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* VIEW F: DISPATCH MANAGEMENT CHANNEL */}
+        {/* VIEW F: TRAINER ROSTER */}
+        {currentTab === "gym_trainers" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+              
+              {/* Form panel */}
+              <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl space-y-4 md:col-span-1">
+                <h3 className="text-sm font-black text-white uppercase font-mono tracking-wider">
+                  {editingTrainer ? "Modify Coach Metrics Row" : "Enroll Coaching Staff Profile"}
+                </h3>
+                <form onSubmit={handleAddOrUpdateTrainer} className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-neutral-400 font-mono uppercase block mb-1">Full Legal Name</label>
+                    <input 
+                      type="text" required 
+                      value={editingTrainer ? editingTrainer.name : trainerForm.name}
+                      onChange={e => editingTrainer ? setEditingTrainer({...editingTrainer, name: e.target.value}) : setTrainerForm({...trainerForm, name: e.target.value})}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono" 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 font-mono uppercase block mb-1">Coaching Specialty Vector</label>
+                    <input 
+                      type="text" required 
+                      value={editingTrainer ? editingTrainer.specialty : trainerForm.specialty}
+                      onChange={e => editingTrainer ? setEditingTrainer({...editingTrainer, specialty: e.target.value}) : setTrainerForm({...trainerForm, specialty: e.target.value})}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono" 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 font-mono uppercase block mb-1">Professional Tier Ranking</label>
+                    <select 
+                      value={editingTrainer ? editingTrainer.tier : trainerForm.tier}
+                      onChange={e => editingTrainer ? setEditingTrainer({...editingTrainer, tier: e.target.value}) : setTrainerForm({...trainerForm, tier: e.target.value})}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono text-xs"
+                    >
+                      <option value="Elite Tier 1">Elite Tier 1</option>
+                      <option value="Senior Level Master Coach">Senior Level Master Coach</option>
+                      <option value="Pro Level Trainer">Pro Level Trainer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 font-mono uppercase block mb-1">Home Station Base Assignment</label>
+                    <select 
+                      value={editingTrainer ? editingTrainer.assigned_branch : trainerForm.assigned_branch}
+                      onChange={e => editingTrainer ? setEditingTrainer({...editingTrainer, assigned_branch: e.target.value}) : setTrainerForm({...trainerForm, assigned_branch: e.target.value})}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono text-xs"
+                    >
+                      <option value="Sheriff Street">Sheriff Street</option>
+                      <option value="Main Street">Main Street</option>
+                      <option value="Tower Node">Tower Node</option>
+                      <option value="Mahaica Branch">Mahaica Branch</option>
+                    </select>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded text-xs uppercase transition-all">
+                      {editingTrainer ? "Apply Overwrites" : "Commit Roster Registry"}
+                    </button>
+                    {editingTrainer && (
+                      <button type="button" onClick={() => setEditingTrainer(null)} className="px-2 bg-neutral-800 text-neutral-400 rounded text-xs hover:text-white">
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* Display list panel */}
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden md:col-span-2">
+                <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-mono text-xs uppercase text-neutral-300 font-bold">
+                  Active Coaching Roster Configuration
+                </div>
+                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {filteredTrainers.map(t => (
+                    <div key={t.id} className="p-4 bg-neutral-950 border border-neutral-850 rounded-lg relative group border-l-2 border-l-neutral-700">
+                      <div className="text-xs font-sans font-bold text-neutral-200">{t.name}</div>
+                      <div className="text-[10px] font-mono text-red-400 mt-1 uppercase tracking-tight">{t.tier}</div>
+                      <div className="text-xs font-sans text-neutral-400 mt-2 italic">Specialty: {t.specialty}</div>
+                      <div className="text-[10px] font-mono text-neutral-500 mt-1 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-neutral-600" /> Bound Station: {t.assigned_branch}
+                      </div>
+                      
+                      <button onClick={() => setEditingTrainer(t)} className="absolute top-2 right-2 text-neutral-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1">
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {filteredTrainers.length === 0 && (
+                    <div className="col-span-2 text-center py-6 italic text-neutral-600 font-mono text-xs">No coaches matched to current context branch node filter layout.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW G: FLEET WORK ORDERS DISPATCH */}
         {currentTab === "trucking_fleet" && (
           <div className="space-y-6">
-            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl">
-              <h2 className="text-lg font-bold text-white mb-4 uppercase">Commit Fleet Logistics Dispatch Order</h2>
-              <form onSubmit={handleCreateWorkOrder} className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-                <input type="text" placeholder="License Plate ID" value={newPlate} onChange={e => setNewPlate(e.target.value)} className="bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 font-mono text-xs" required />
-                <input type="text" placeholder="Driver Full Identity Name" value={newDriver} onChange={e => setNewDriver(e.target.value)} className="bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 text-xs" required />
-                <input type="text" placeholder="Destination Hub Terminal" value={newDest} onChange={e => setNewDest(e.target.value)} className="bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 text-xs" required />
-                <button type="submit" className="bg-red-600 hover:bg-red-700 font-bold p-2.5 rounded text-white transition-all text-xs uppercase tracking-wider">Commit Route</button>
-              </form>
+            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl border-l-4 border-l-amber-500">
+              <h2 className="text-xl font-black text-white uppercase font-mono tracking-tight">Lyft Freight & Trucking Fleet Node</h2>
+              <p className="text-xs text-neutral-400 mt-1">Centralized dispatch panel logging cross-border logistics pipelines and commercial haul operations syncs.</p>
             </div>
 
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+              {/* Dispatch Form Box */}
+              <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl space-y-4">
+                <div className="text-xs font-black font-mono text-white uppercase tracking-wider">Instantiate Dispatch Registry Row</div>
+                <form onSubmit={handleCreateWorkOrder} className="space-y-3 text-xs font-mono">
+                  <div>
+                    <label className="text-neutral-400 uppercase block mb-1">Vehicle License Plate Number</label>
+                    <input 
+                      type="text" required placeholder="e.g. GAB 9283"
+                      value={newPlate} onChange={e => setNewPlate(e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-amber-500" 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 uppercase block mb-1">Driver In Command Identity</label>
+                    <input 
+                      type="text" required placeholder="e.g. Seon Scarborough"
+                      value={newDriver} onChange={e => setNewDriver(e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-amber-500" 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 uppercase block mb-1">Target Route Destination</label>
+                    <input 
+                      type="text" required placeholder="e.g. Lethem Border Node Depot"
+                      value={newDest} onChange={e => setNewDest(e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-amber-500" 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 uppercase block mb-1">Consolidated Freight Cargo Classification</label>
+                    <select 
+                      value={newCargo} onChange={e => setNewCargo(e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-amber-500 text-xs"
+                    >
+                      <option value="Gym Equipment Iron Mat">Gym Equipment Iron Mat</option>
+                      <option value="Bulk Construction Aggregates">Bulk Construction Aggregates</option>
+                      <option value="Imported Bar Supplements Container">Imported Bar Supplements Container</option>
+                    </select>
+                  </div>
+                  <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-neutral-950 font-black py-2.5 rounded text-xs uppercase transition-all">
+                    Publish Active Waybill Row
+                  </button>
+                </form>
+              </div>
+
+              {/* Active Orders List Tracking layout */}
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden lg:col-span-2">
+                <table className="w-full text-left text-xs text-neutral-400">
+                  <thead className="bg-neutral-950 font-mono text-neutral-500 uppercase">
+                    <tr>
+                      <th className="p-3">Vehicle / Driver</th>
+                      <th className="p-3">Route Destination Point</th>
+                      <th className="p-3">Freight Cargo</th>
+                      <th className="p-3">Pipeline Status Track</th>
+                      <th className="p-3 text-right">Gate Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-800 font-mono">
+                    {workOrders.map((order) => (
+                      <tr key={order.id} className="hover:bg-neutral-850/40">
+                        <td className="p-3">
+                          <div className="font-bold text-neutral-200">{order.truck_plate}</div>
+                          <div className="text-[10px] text-neutral-500 font-sans mt-0.5">{order.driver_name}</div>
+                        </td>
+                        <td className="p-3 text-neutral-300 font-sans">{order.destination}</td>
+                        <td className="p-3 text-neutral-400 text-[11px]">{order.cargo_type}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${order.dispatch_status === 'Delivered' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : order.dispatch_status === 'In Transit' ? 'bg-amber-950 text-amber-400 border border-amber-900' : 'bg-neutral-950 text-neutral-500 border border-neutral-800'}`}>
+                            {order.dispatch_status}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right space-x-1.5">
+                          {order.dispatch_status === "Pending" && (
+                            <button onClick={() => handleUpdateStatus(order.id!, "In Transit")} className="px-2 py-0.5 bg-neutral-800 hover:bg-amber-900/40 border border-neutral-700 text-[10px] rounded text-amber-400 font-bold">
+                              Dispatch Route
+                            </button>
+                          )}
+                          {order.dispatch_status === "In Transit" && (
+                            <button onClick={() => handleUpdateStatus(order.id!, "Delivered")} className="px-2 py-0.5 bg-neutral-800 hover:bg-emerald-900/40 border border-neutral-700 text-[10px] rounded text-emerald-400 font-bold">
+                              Log Handover Delivery
+                            </button>
+                          )}
+                          {order.dispatch_status === "Delivered" && (
+                            <span className="text-neutral-600 italic text-[10px]">Closed Log Entry</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {workOrders.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="p-6 text-center italic text-neutral-600 font-sans">Zero freight work orders tracked inside active database schema rows.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW H: LOGISTICS & SPREADSHEET PAYROLL */}
+        {currentTab === "trucking_payroll" && (
+          <div className="space-y-6">
+            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-l-4 border-l-emerald-600">
+              <div>
+                <h2 className="text-xl font-black text-white uppercase tracking-tight font-mono">Centralized Excel Ledger Payroll Compiler</h2>
+                <p className="text-xs text-neutral-400 mt-1">Parses raw sheet cells targeting the standard format sheet array naming channel: <span className="text-red-400 font-mono font-bold">"April Payroll-Final"</span></p>
+              </div>
+
+              <div className="relative overflow-hidden inline-block shrink-0">
+                <input 
+                  type="file" accept=".xlsx, .xls" 
+                  onChange={handleExcelIngestion}
+                  className="absolute top-0 left-0 opacity-0 w-full h-full cursor-pointer"
+                />
+                <button className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider px-4 py-2.5 rounded border border-emerald-500 shadow transition-all flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4" /> Load Stream Ledger Asset
+                </button>
+              </div>
+            </div>
+
+            {/* Matrix Sheet Rows Display Table Grid */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
-              <div className="p-4 bg-neutral-850 font-bold text-sm text-white border-b border-neutral-800">Active Trucking Logistics Framework</div>
               <table className="w-full text-left text-xs text-neutral-400">
                 <thead className="bg-neutral-950 font-mono text-neutral-500 uppercase">
                   <tr>
-                    <th className="p-3">Plate ID</th>
-                    <th className="p-3">Cargo Driver</th>
-                    <th className="p-3">Destination Node</th>
-                    <th className="p-3">State Framework Status</th>
-                    <th className="p-3 text-right">Route Action Overrides</th>
+                    <th className="p-3">Staff Identity Name</th>
+                    <th className="p-3">Role Position / Depot Base</th>
+                    <th className="p-3">F1 Salary Segment</th>
+                    <th className="p-3">F2 Salary Segment</th>
+                    <th className="p-3">Gross Total</th>
+                    <th className="p-3">Statutory Deductions (NIS/PAYE)</th>
+                    <th className="p-3">Net Payment Takeout</th>
+                    <th className="p-3 text-right">Slips Matrix</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800 font-mono">
-                  {workOrders.map((order) => (
-                    <tr key={order.id} className="hover:bg-neutral-850/50">
-                      <td className="p-3 font-bold text-neutral-200">{order.truck_plate}</td>
-                      <td className="p-3 font-sans text-neutral-300">{order.driver_name}</td>
-                      <td className="p-3 font-sans">{order.destination}</td>
+                  {payrollRecords.map((record) => (
+                    <tr key={record.id} className="hover:bg-neutral-850/40 text-[11px]">
+                      <td className="p-3 font-sans font-bold text-neutral-200">{record.employee_name}</td>
                       <td className="p-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${order.dispatch_status === 'Pending' ? 'bg-amber-950 text-amber-400 border border-amber-800' : order.dispatch_status === 'In Transit' ? 'bg-blue-950 text-blue-400 border border-blue-800' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'}`}>
-                          {order.dispatch_status}
-                        </span>
+                        <div className="text-neutral-300 font-sans">{record.position}</div>
+                        <div className="text-[10px] text-neutral-500 mt-0.5">Location Base: {record.location}</div>
                       </td>
+                      <td className="p-3 text-neutral-400">
+                        Hrs: {record.f1_normal_hours}N / {record.f1_ot_hours}OT
+                        <div className="text-[10px] text-neutral-500 font-medium mt-0.5">${record.f1_gross.toLocaleString()} GYD</div>
+                      </td>
+                      <td className="p-3 text-neutral-400">
+                        Hrs: {record.f2_normal_hours}N / {record.f2_ot_hours}OT
+                        <div className="text-[10px] text-neutral-500 font-medium mt-0.5">${record.f2_gross.toLocaleString()} GYD</div>
+                      </td>
+                      <td className="p-3 text-neutral-300 font-bold">${record.gross_salary.toLocaleString()}</td>
+                      <td className="p-3 text-red-400/80">
+                        NIS: -${record.nis_contribution.toLocaleString()}
+                        <div className="text-[10px] text-red-500 mt-0.5">PAYE: -${record.paye_deduction.toLocaleString()}</div>
+                      </td>
+                      <td className="p-3 text-emerald-400 font-black text-xs">${record.net_pay.toLocaleString()} GYD</td>
                       <td className="p-3 text-right">
-                        {order.dispatch_status === "Pending" && (
-                          <button onClick={() => handleUpdateStatus(order.id!, "In Transit")} className="bg-neutral-800 hover:bg-blue-600 text-white px-2 py-1 rounded text-[10px] transition-all">Mark Departure</button>
-                        )}
-                        {order.dispatch_status === "In Transit" && (
-                          <button onClick={() => handleUpdateStatus(order.id!, "Delivered")} className="bg-neutral-800 hover:bg-emerald-600 text-white px-2 py-1 rounded text-[10px] transition-all">Confirm Arrival</button>
-                        )}
-                        {order.dispatch_status === "Delivered" && <span className="text-neutral-600 text-[10px] italic">Cycle Finalized</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW G: LOGISTICS PAYROLL LEGER SYSTEM */}
-        {currentTab === "trucking_payroll" && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center bg-neutral-900 p-6 rounded-xl border border-neutral-800 border-l-4 border-l-red-600">
-              <div>
-                <h2 className="text-xl font-black text-white uppercase tracking-tight">Matrix Payroll Processing Hub</h2>
-                <p className="text-xs text-neutral-400 mt-0.5">Automate roles, hour variables, and map spreadsheet file arrays onto active fields.</p>
-              </div>
-              <label className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded text-sm cursor-pointer transition-all shadow-lg">
-                Ingest Data Workbook
-                <input type="file" accept=".xlsx, .xls" onChange={handleExcelIngestion} className="hidden" />
-              </label>
-            </div>
-
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs text-neutral-400">
-                <thead className="bg-neutral-950 text-neutral-500 font-mono uppercase">
-                  <tr>
-                    <th className="p-3">Personnel Profile</th>
-                    <th className="p-3">Role Matrix</th>
-                    <th className="p-3">Gross Breakdown (F1 / F2)</th>
-                    <th className="p-3">Deductions Track</th>
-                    <th className="p-3 text-red-500">Net Return Payable</th>
-                    <th className="p-3 text-center">Interactive Statement</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-800 font-mono">
-                  {payrollRecords.map((rec, i) => (
-                    <tr key={i} className="hover:bg-neutral-850/40">
-                      <td className="p-3">
-                        <div className="font-sans font-bold text-neutral-200">{rec.employee_name}</div>
-                        <div className="text-[10px] text-neutral-500 font-mono">{rec.location} • {rec.bank_name}</div>
-                      </td>
-                      <td className="p-3 text-neutral-300 font-sans">{rec.position}</td>
-                      <td className="p-3 text-neutral-400 text-[11px]">
-                        F1: ${rec.f1_gross.toLocaleString()} <br/> F2: ${rec.f2_gross.toLocaleString()}
-                      </td>
-                      <td className="p-3 text-red-400 text-[11px]">
-                        NIS: ${rec.nis_contribution.toLocaleString()} <br/> PAYE: ${rec.paye_deduction.toLocaleString()}
-                      </td>
-                      <td className="p-3 text-red-500 font-black font-sans text-sm">${rec.net_pay.toLocaleString()} GYD</td>
-                      <td className="p-3 text-center">
-                        <button onClick={() => setSelectedPayslip(rec)} className="inline-flex items-center gap-1.5 bg-neutral-800 hover:bg-red-600 text-neutral-300 hover:text-white border border-neutral-700 px-3 py-1.5 rounded text-xs transition-all">
-                          <FileText className="w-3.5 h-3.5" /> View Payslip
+                        <button onClick={() => setSelectedPayslip(record)} className="px-2 py-1 bg-neutral-950 border border-neutral-800 text-[10px] rounded hover:border-emerald-600 text-neutral-300 hover:text-white font-bold transition-all">
+                          View Slip Panel
                         </button>
                       </td>
                     </tr>
                   ))}
+                  {payrollRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center italic text-neutral-600 font-sans">Zero payroll line maps loaded from parsed sheet schema layout grid. Trigger document ingestion handle framework.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         )}
 
-        {/* VIEW H: SECURITY OVER overrides ACCESS CONTROL WITH STRICT LOCATION ASSIGNMENTS */}
+        {/* VIEW I: ACCESS SECURITY NODES */}
         {currentTab === "admin_settings" && isMasterAdmin && (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl">
-              <div className="p-5 bg-neutral-850 border-b border-neutral-800 font-bold text-xs uppercase tracking-wider text-white flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-red-500" />
-                Register Terminal Operator
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* Form segment */}
+              <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl space-y-4">
+                <div className="text-sm font-black font-mono text-white uppercase tracking-wider">Instantiate Terminal Credentials Asset</div>
+                <form onSubmit={handleCreateSystemUser} className="space-y-3 text-xs font-mono">
+                  <div>
+                    <label className="text-neutral-400 uppercase block mb-1">Operator Legal Account Name</label>
+                    <input 
+                      type="text" required placeholder="e.g. Christine Gonsalves"
+                      value={sysUserForm.name} onChange={e => setSysUserForm({...sysUserForm, name: e.target.value})}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600" 
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-neutral-400 uppercase block mb-1">Username Identifier</label>
+                      <input 
+                        type="text" required placeholder="christine_g"
+                        value={sysUserForm.username} onChange={e => setSysUserForm({...sysUserForm, username: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-neutral-400 uppercase block mb-1">System Crypt Passcode</label>
+                      <input 
+                        type="password" required placeholder="••••••••"
+                        value={sysUserForm.password} onChange={e => setSysUserForm({...sysUserForm, password: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-neutral-400 uppercase block mb-1">Role Classification</label>
+                      <select 
+                        value={sysUserForm.role} onChange={e => setSysUserForm({...sysUserForm, role: e.target.value})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 text-xs"
+                      >
+                        <option value="Staff">Staff</option>
+                        <option value="Admin">Admin</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-neutral-400 uppercase block mb-1">Operational Division Context</label>
+                      <select 
+                        value={sysUserForm.department} onChange={e => setSysUserForm({...sysUserForm, department: e.target.value as any})}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 text-xs"
+                      >
+                        <option value="gym_operations">Gym Operations Division</option>
+                        <option value="lyft_trucking">Lyft Trucking Logistics</option>
+                        <option value="master_admin">Master Central Admin Control</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-neutral-400 uppercase block mb-1">Default Base Station Node Locking</label>
+                    <select 
+                      value={sysUserForm.assigned_branch} onChange={e => setSysUserForm({...sysUserForm, assigned_branch: e.target.value})}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white focus:outline-none focus:border-red-600 text-xs"
+                    >
+                      <option value="Sheriff Street">Sheriff Street</option>
+                      <option value="Main Street">Main Street</option>
+                      <option value="Tower Node">Tower Node</option>
+                      <option value="Mahaica Branch">Mahaica Branch</option>
+                    </select>
+                  </div>
+
+                  <div className="p-3 bg-neutral-950 rounded border border-neutral-850 flex items-center gap-2">
+                    <input 
+                      type="checkbox" id="access_all_locations"
+                      checked={sysUserForm.access_all_locations}
+                      onChange={e => setSysUserForm({...sysUserForm, access_all_locations: e.target.checked})}
+                      className="accent-red-600 w-4 h-4 shrink-0"
+                    />
+                    <label htmlFor="access_all_locations" className="text-[10px] uppercase text-neutral-300 font-bold tracking-wide">Grant Global Location Override Permissions</label>
+                  </div>
+
+                  <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-2 rounded text-xs uppercase transition-all shadow">
+                    Generate Authenticated Profile Node Row
+                  </button>
+                </form>
               </div>
-              <form onSubmit={handleCreateSystemUser} className="p-5 space-y-4 text-xs">
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Full Identity Name</label>
-                  <input type="text" value={sysUserForm.name} onChange={e => setSysUserForm({...sysUserForm, name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" placeholder="e.g. Supervisor Ryan" required />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Terminal Username ID</label>
-                  <input type="text" value={sysUserForm.username} onChange={e => setSysUserForm({...sysUserForm, username: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 font-mono" placeholder="username_id" required />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Security Key Password</label>
-                  <input type="password" value={sysUserForm.password} onChange={e => setSysUserForm({...sysUserForm, password: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 font-mono" placeholder="••••••••" required />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Authorization Level Tag</label>
-                  <input type="text" value={sysUserForm.role} onChange={e => setSysUserForm({...sysUserForm, role: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" placeholder="Branch Manager" required />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Operational Target Framework</label>
-                  <select value={sysUserForm.department} onChange={e => setSysUserForm({...sysUserForm, department: e.target.value as any})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600">
-                    <option value="gym_operations">Gym Facility Operations Only</option>
-                    <option value="lyft_trucking">Lyft Trucking Logistics Channels</option>
-                    <option value="master_admin">Master Global Admin Grid Visibility</option>
-                  </select>
-                </div>
 
-                {/* RESTORED PER LOCATION AUTHORIZATION NODE SELECTION */}
-                <div className="space-y-1">
-                  <label className="text-neutral-400 font-mono uppercase">Assigned Access Node Location Boundary</label>
-                  <select value={sysUserForm.assigned_branch} onChange={e => setSysUserForm({...sysUserForm, assigned_branch: e.target.value})} className="w-full bg-neutral-900 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600">
-                    <option value="Sheriff Street">Sheriff Street Base</option>
-                    <option value="Main Street">Main Street Hub</option>
-                    <option value="Tower Node">Tower Node Terminal</option>
-                    <option value="Mahaica Branch">Mahaica Branch Outpost</option>
-                  </select>
-                  <p className="text-[10px] text-neutral-500 italic mt-0.5">Staff parameters lock strictly onto this branch frame row unless override token is checked below.</p>
+              {/* Security Users table view layout list */}
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+                <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-mono text-xs uppercase text-neutral-300 font-bold">
+                  Active Verified Operator Matrix Context
                 </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <input type="checkbox" id="all_locs_check" checked={sysUserForm.access_all_locations} onChange={e => setSysUserForm({...sysUserForm, access_all_locations: e.target.checked})} className="accent-red-600" />
-                  <label htmlFor="all_locs_check" className="text-neutral-300 font-mono text-[11px] cursor-pointer select-none">
-                    Grant Multi-Location Override (Switch Tabs Mode)
-                  </label>
-                </div>
-
-                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold p-2.5 rounded transition-all uppercase tracking-wider text-[11px] mt-1">
-                  Commit Matrix Access Credential
-                </button>
-              </form>
-            </div>
-
-            <div className="xl:col-span-2 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
-              <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-bold text-xs uppercase tracking-wider text-white">
-                Authorized Operator Network Grid
-              </div>
-              <table className="w-full text-left text-xs text-neutral-400">
-                <thead className="bg-neutral-950 text-neutral-500 font-mono uppercase">
-                  <tr>
-                    <th className="p-3">Operator</th>
-                    <th className="p-3">Index Descriptor</th>
-                    <th className="p-3">Domain Vector</th>
-                    <th className="p-3 text-right">Strict Branch Parameter Boundary</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-800 font-mono">
-                  {systemUsersList.map((u, idx) => (
-                    <tr key={idx} className="hover:bg-neutral-850/40">
-                      <td className="p-3 font-sans font-bold text-neutral-200">{u.name}</td>
-                      <td className="p-3 text-neutral-400">@{u.username} <span className="text-neutral-600">({u.role})</span></td>
-                      <td className="p-3">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${u.department === 'master_admin' ? 'bg-red-950 text-red-400 border border-red-900' : u.department === 'lyft_trucking' ? 'bg-blue-950 text-blue-400 border border-blue-900' : 'bg-neutral-850 text-neutral-300'}`}>
-                          {u.department}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right text-neutral-400 font-sans">
-                        {u.access_all_locations ? (
-                          <span className="text-red-500 font-bold font-mono text-[10px] bg-red-950/40 px-2 py-0.5 rounded border border-red-900">GLOBAL ALL OVERRIDE</span>
-                        ) : (
-                          <span>{u.assigned_branch} Only</span>
-                        )}
-                      </td>
+                <table className="w-full text-left text-xs text-neutral-400">
+                  <thead className="bg-neutral-950 font-mono text-neutral-500 uppercase">
+                    <tr>
+                      <th className="p-3">Operator User</th>
+                      <th className="p-3">Role Designation</th>
+                      <th className="p-3">Division Node Scope</th>
+                      <th className="p-3">Global Overrides</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-800 font-mono text-[11px]">
+                    {systemUsersList.map((u, index) => (
+                      <tr key={index} className="hover:bg-neutral-850/40">
+                        <td className="p-3 font-sans font-bold text-neutral-200">
+                          {u.name}
+                          <div className="text-[10px] font-mono font-normal text-neutral-500 mt-0.5">UID ID: @{u.username}</div>
+                        </td>
+                        <td className="p-3 text-neutral-300">{u.role}</td>
+                        <td className="p-3 text-red-400 uppercase text-[10px] tracking-tight">{u.department.replace("_", " ")}</td>
+                        <td className="p-3 text-neutral-400">{u.access_all_locations ? "🟢 Unrestricted Global Access" : `🔒 Locked Base: ${u.assigned_branch}`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
       </main>
 
-      {/* AUTOMATIC FORTNIGHTLY STATEMENT MODAL */}
+      {/* MODAL LIGHTBOX DIALOG WINDOW LAYOUT FOR GENERATING INDIVIDUAL DISPATCH SLIPS */}
       {selectedPayslip && (
-        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
-          <div className="bg-white text-neutral-900 w-full max-w-xl rounded-xl p-8 shadow-2xl relative border-t-8 border-red-600">
-            <button onClick={() => setSelectedPayslip(null)} className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-900">
-              <X className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4 select-none">
+          <div className="w-full max-w-xl bg-white text-neutral-900 rounded-xl overflow-hidden shadow-2xl p-6 relative font-mono space-y-6 text-xs border border-neutral-300">
+            <button onClick={() => setSelectedPayslip(null)} className="absolute top-4 right-4 p-1 text-neutral-400 hover:text-neutral-900 transition-all font-sans text-base">
+              ✕
             </button>
-            <div className="text-center border-b pb-4 mb-5">
-              <h3 className="text-xl font-black uppercase tracking-wider text-neutral-900">Lyft Trucking Services Ltd.</h3>
-              <p className="text-xs text-neutral-500 font-bold font-mono uppercase tracking-wider">Statement of Fortnightly Earning Parameters</p>
+            
+            <div className="text-center pb-4 border-b border-dashed border-neutral-300 space-y-1">
+              <div className="text-sm font-black uppercase tracking-wider">Lyft Trucking Logistics Matrix</div>
+              <div className="text-[10px] text-neutral-500">Commercial Freight Waybill Remuneration Statement Node</div>
             </div>
-            <div className="grid grid-cols-2 gap-y-2 gap-x-4 bg-neutral-100 p-4 rounded-lg mb-5 text-xs">
-              <div><span className="text-neutral-400 font-bold uppercase block text-[9px]">Employee Target Name</span> <strong className="text-sm text-neutral-800">{selectedPayslip.employee_name}</strong></div>
-              <div><span className="text-neutral-400 font-bold uppercase block text-[9px]">Assigned Designation</span> <strong className="text-sm text-neutral-800">{selectedPayslip.position}</strong></div>
-              <div><span className="text-neutral-400 font-bold uppercase block text-[9px]">Operational Workspace</span> <span className="font-semibold text-neutral-700">{selectedPayslip.location} Node</span></div>
-              <div><span className="text-neutral-400 font-bold uppercase block text-[9px]">Disbursement Target</span> <span className="font-semibold text-neutral-700">{selectedPayslip.bank_name} ({selectedPayslip.account_number})</span></div>
+
+            <div className="grid grid-cols-2 gap-y-2 border-b border-neutral-200 pb-4">
+              <div><span className="text-neutral-500">Employee Name:</span> <span className="font-bold font-sans">{selectedPayslip.employee_name}</span></div>
+              <div><span className="text-neutral-500">Position Role:</span> {selectedPayslip.position}</div>
+              <div><span className="text-neutral-500">Location Base Context:</span> {selectedPayslip.location}</div>
+              <div><span className="text-neutral-500">Payment Frequency:</span> {selectedPayslip.payment_frequency}</div>
+              <div><span className="text-neutral-500">Target Cycle Date:</span> {selectedPayslip.payroll_cycle_date}</div>
+              <div><span className="text-neutral-500">Bank Wire Target:</span> {selectedPayslip.bank_name} ({selectedPayslip.account_number})</div>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-xs mb-5 font-mono">
-              <div className="bg-neutral-50 p-3 rounded border border-neutral-200">
-                <span className="font-bold text-neutral-700 block mb-1 border-b pb-0.5 font-sans">First Fortnightly Half</span>
-                <div>Hours Matrix: <span className="font-bold text-neutral-900">{selectedPayslip.f1_normal_hours}h</span></div>
-                <div className="mt-1.5 pt-1 border-t text-neutral-800 font-bold">Gross: ${selectedPayslip.f1_gross.toLocaleString()}</div>
+
+            <div className="space-y-2 border-b border-neutral-200 pb-4">
+              <div className="flex justify-between items-center font-bold text-[10px] text-neutral-500 uppercase">
+                <span>Remuneration Component Sector</span>
+                <span>Calculated Volume Aggregation (GYD)</span>
               </div>
-              <div className="bg-neutral-50 p-3 rounded border border-neutral-200">
-                <span className="font-bold text-neutral-700 block mb-1 border-b pb-0.5 font-sans">Second Fortnightly Half</span>
-                <div>Hours Matrix: <span className="font-bold text-neutral-900">{selectedPayslip.f2_normal_hours}h</span></div>
-                <div className="mt-1.5 pt-1 border-t text-neutral-800 font-bold">Gross: ${selectedPayslip.f2_gross.toLocaleString()}</div>
+              <div className="flex justify-between items-center">
+                <span>Fortnight 1 Structural Basic + Overtime Gross Matrix:</span>
+                <span className="font-bold">${selectedPayslip.f1_gross.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>Fortnight 2 Structural Basic + Overtime Gross Matrix:</span>
+                <span className="font-bold">${selectedPayslip.f2_gross.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center pt-1.5 border-t border-dashed border-neutral-200 font-bold text-neutral-900">
+                <span>Gross Accumulation Balance:</span>
+                <span>${selectedPayslip.gross_salary.toLocaleString()}</span>
               </div>
             </div>
-            <div className="space-y-1.5 text-xs font-mono mb-4 border-t pt-3">
-              <div className="flex justify-between"><span>Consolidated Gross Base:</span> <span className="font-bold">${selectedPayslip.gross_salary.toLocaleString()} GYD</span></div>
-              <div className="flex justify-between text-red-600"><span>National Insurance (NIS):</span> <span>-${selectedPayslip.nis_contribution.toLocaleString()}</span></div>
-              <div className="flex justify-between text-red-600"><span>PAYE Income Tax:</span> <span>-${selectedPayslip.paye_deduction.toLocaleString()}</span></div>
-              <div className="flex justify-between border-t border-neutral-300 pt-2.5 text-sm font-black text-red-600 bg-red-50 p-2.5 rounded mt-2 font-sans">
-                <span>NET ACCOUNT PAYABLE DISBURSEMENT:</span>
-                <span>${selectedPayslip.net_pay.toLocaleString()} GYD</span>
+
+            <div className="space-y-1 text-red-600 border-b border-neutral-200 pb-4">
+              <div className="flex justify-between items-center text-[10px] font-bold text-neutral-500 uppercase">
+                <span>Statutory Deduction Track</span>
+                <span>Amount Dropped</span>
               </div>
+              <div className="flex justify-between items-center">
+                <span>National Insurance Scheme (NIS Contribution):</span>
+                <span>-${selectedPayslip.nis_contribution.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>Pay As You Earn (PAYE Deduction):</span>
+                <span>-${selectedPayslip.paye_deduction.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center text-sm font-black text-emerald-700 bg-emerald-50 p-3 rounded border border-emerald-200">
+              <span className="uppercase tracking-wide">Net Remuneration Takeout Wire Pay:</span>
+              <span className="text-base">${selectedPayslip.net_pay.toLocaleString()} GYD</span>
+            </div>
+
+            <div className="flex justify-between gap-4 pt-4 text-[9px] text-neutral-400 font-sans leading-relaxed">
+              <p>Generated dynamically by spreadsheet injection layer on connection node matrix framework pipelines. Confidential statement output track.</p>
+              <button onClick={() => window.print()} className="bg-neutral-900 text-white font-mono uppercase text-[10px] px-3 py-1.5 rounded shrink-0 font-bold border border-neutral-800 hover:bg-neutral-800 transition-all">
+                Print Ledger Matrix Slips
+              </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* SECURITY ACCESS TERMINAL SHIELD BACK DROP DOORWAY */}
-      {!currentUser && (
-        <div className="fixed inset-0 bg-neutral-950 flex items-center justify-center z-50">
-          <form onSubmit={handleSystemLogin} className="bg-neutral-900 p-8 rounded-xl border border-neutral-800 space-y-4 w-80 shadow-2xl relative border-t-4 border-red-600">
-            <div className="text-center pb-2">
-              <h2 className="text-white font-black tracking-wider uppercase text-md">Lyft Gym Matrix</h2>
-              <p className="text-[10px] text-neutral-500 font-mono tracking-widest mt-0.5">Terminal Authorization Required</p>
-            </div>
-            {authError && <div className="bg-red-950/50 border border-red-800 text-red-400 p-2 rounded text-xs text-center font-semibold font-mono">{authError}</div>}
-            <div className="space-y-2">
-              <input type="text" placeholder="Operator Identity Handle" value={authUsername} onChange={e => setAuthUsername(e.target.value)} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 text-xs text-white rounded focus:outline-none focus:border-red-600 font-mono" required />
-              <input type="password" placeholder="Terminal Password Code" value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 text-xs text-white rounded focus:outline-none focus:border-red-600 font-mono" required />
-            </div>
-            <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white p-2.5 rounded text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-red-900/10">Authorize Terminal</button>
-          </form>
         </div>
       )}
     </div>
