@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '../../../../utils/supabase/server';
+import { createClient } from '../../../utils/supabase';
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
     const phoneNoSource = textData.from;
     const cleanBodyText = textData.text?.body?.toLowerCase().trim();
 
+    // Word triggers to match for automatic tracking
     const clockInPhrases = ['good morning', 'clock in', 'clockin'];
     const clockOutPhrases = ['clock out', 'clockout'];
 
