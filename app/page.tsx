@@ -7,7 +7,8 @@ import {
   Truck, FileSpreadsheet, LogOut, Users, UserPlus, 
   Activity, FileText, X, Dumbbell, BarChart3, Settings, 
   ShieldAlert, Plus, ShoppingCart, Tag, CreditCard, Camera,
-  MapPin, Edit3, UserCheck, Layers, Trash2, Package, RefreshCw
+  MapPin, Edit3, UserCheck, Layers, Trash2, Package, RefreshCw,
+  Check, Calendar
 } from "lucide-react";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -69,6 +70,7 @@ interface GymMember {
   needs_trainer: boolean;
   assigned_trainer_id?: string;
   photo_url?: string;
+  expiration_date: string; // Restored and instantiated parameter target
 }
 
 interface InventoryItem {
@@ -112,6 +114,10 @@ export default function UnifiedSystemMatrix() {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [selectedPayslip, setSelectedPayslip] = useState<PayrollRecord | null>(null);
 
+  // --- Member Editing Row Context Triggers ---
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [editMemberForm, setEditMemberForm] = useState<GymMember | null>(null);
+
   // --- Live Webcam Controls ---
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -138,6 +144,13 @@ export default function UnifiedSystemMatrix() {
   // --- Inventory Form Binding ---
   const [inventoryForm, setInventoryForm] = useState({ name: "", price: 0, quantity: 0 });
 
+  // Get current date and generate standard 1-month window baseline string format (YYYY-MM-DD)
+  const getCalculatedDefaultExpiration = () => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    return d.toISOString().split("T")[0];
+  };
+
   // --- Gym Registration Form (Fully Extended Restored Params) ---
   const [memberForm, setMemberForm] = useState({
     full_name: "",
@@ -150,7 +163,8 @@ export default function UnifiedSystemMatrix() {
     fitness_goal: "Weight Loss / Toning",
     needs_trainer: false,
     assigned_trainer_id: "",
-    photo_url: ""
+    photo_url: "",
+    expiration_date: getCalculatedDefaultExpiration()
   });
   
   // --- Admin Registration Control Bindings ---
@@ -281,11 +295,57 @@ export default function UnifiedSystemMatrix() {
         full_name: "", phone: "", email: "", address: "",
         membership_type: "Full Access VIP", assigned_branch: activeBranchContext,
         status: "Active", fitness_goal: "Weight Loss / Toning",
-        needs_trainer: false, assigned_trainer_id: "", photo_url: ""
+        needs_trainer: false, assigned_trainer_id: "", photo_url: "",
+        expiration_date: getCalculatedDefaultExpiration()
       });
       fetchGymData();
     } else {
       alert(`Database error saving profile: ${error.message}`);
+    }
+  };
+
+  // --- Gym Member Editing Inline Logic Operations ---
+  const initEditMember = (member: GymMember) => {
+    setEditingMemberId(member.id || null);
+    setEditMemberForm({ ...member });
+  };
+
+  const handleUpdateMemberSave = async () => {
+    if (!editMemberForm || !editMemberForm.id) return;
+    const { error } = await supabase
+      .from("gym_members")
+      .update({
+        full_name: editMemberForm.full_name,
+        phone: editMemberForm.phone,
+        email: editMemberForm.email,
+        address: editMemberForm.address,
+        membership_type: editMemberForm.membership_type,
+        status: editMemberForm.status,
+        fitness_goal: editMemberForm.fitness_goal,
+        expiration_date: editMemberForm.expiration_date,
+        needs_trainer: editMemberForm.needs_trainer,
+        assigned_trainer_id: editMemberForm.assigned_trainer_id
+      })
+      .eq("id", editMemberForm.id);
+
+    if (!error) {
+      alert("Client configuration matrix updated cleanly.");
+      setEditingMemberId(null);
+      setEditMemberForm(null);
+      fetchGymData();
+    } else {
+      alert(`Error applying modifications: ${error.message}`);
+    }
+  };
+
+  const handleDeleteMemberRow = async (id: string) => {
+    if (!confirm("Are you certain you want to purge this client registration record from the system permanently? This step cannot be rolled back.")) return;
+    const { error } = await supabase.from("gym_members").delete().eq("id", id);
+    if (!error) {
+      alert("Identity row detached from Supabase matrix maps successfully.");
+      fetchGymData();
+    } else {
+      alert(`Error removing client profile: ${error.message}`);
     }
   };
 
@@ -314,7 +374,6 @@ export default function UnifiedSystemMatrix() {
     const { error } = await supabase.from("inventory").delete().eq("id", id);
     if (!error) {
       fetchInventoryData();
-      // Drop from checkout basket if present
       setPosCart(prev => prev.filter(item => item.id !== id));
     }
   };
@@ -380,7 +439,6 @@ export default function UnifiedSystemMatrix() {
   const handleProcessCheckout = async () => {
     if (posCart.length === 0) return;
     
-    // Reduce real numbers inside Supabase inventory table
     for (const item of posCart) {
       const match = inventoryItems.find(i => i.id === item.id);
       if (match) {
@@ -647,7 +705,7 @@ export default function UnifiedSystemMatrix() {
           </div>
         )}
 
-        {/* VIEW B: MEMBER RECORDS DISPLAY */}
+        {/* VIEW B: MEMBER RECORDS DISPLAY (EXTENDED FOR INLINE EDIT/DELETE) */}
         {currentTab === "gym_members" && (
           <div className="space-y-6">
             <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl flex justify-between items-center">
@@ -669,17 +727,105 @@ export default function UnifiedSystemMatrix() {
                     <th className="p-3">Home Residence/Address</th>
                     <th className="p-3">Target Objective</th>
                     <th className="p-3">Trainer Assignment</th>
+                    <th className="p-3">Plan Expiration</th>
                     <th className="p-3">Account Status</th>
+                    <th className="p-3 text-right">Row Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800 font-mono">
                   {filteredMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center italic text-neutral-600 font-sans">No client records aligned to the {activeBranchContext} node. Clear enrollment matrix to populate.</td>
+                      <td colSpan={8} className="p-8 text-center italic text-neutral-600 font-sans">No client records aligned to the {activeBranchContext} node. Clear enrollment matrix to populate.</td>
                     </tr>
                   ) : (
                     filteredMembers.map((m) => {
                       const coachPair = trainers.find(t => t.id === m.assigned_trainer_id);
+                      const isEditing = editingMemberId === m.id;
+
+                      if (isEditing && editMemberForm) {
+                        return (
+                          <tr key={m.id} className="bg-neutral-900 font-sans">
+                            <td className="p-3">
+                              <div className="w-10 h-10 bg-neutral-950 flex items-center justify-center text-neutral-600 border border-neutral-800 rounded"><Camera className="w-4 h-4" /></div>
+                            </td>
+                            <td className="p-3 space-y-2">
+                              <input 
+                                type="text" value={editMemberForm.full_name}
+                                onChange={e => setEditMemberForm({...editMemberForm, full_name: e.target.value})}
+                                className="bg-neutral-950 border border-neutral-800 text-white rounded p-1 text-xs w-full font-mono"
+                                placeholder="Legal Name"
+                              />
+                              <input 
+                                type="text" value={editMemberForm.phone}
+                                onChange={e => setEditMemberForm({...editMemberForm, phone: e.target.value})}
+                                className="bg-neutral-950 border border-neutral-800 text-neutral-400 rounded p-1 text-[10px] w-full font-mono"
+                                placeholder="Phone Contact"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <input 
+                                type="text" value={editMemberForm.address}
+                                onChange={e => setEditMemberForm({...editMemberForm, address: e.target.value})}
+                                className="bg-neutral-950 border border-neutral-800 text-white rounded p-1 text-xs w-full font-mono"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <select 
+                                value={editMemberForm.fitness_goal}
+                                onChange={e => setEditMemberForm({...editMemberForm, fitness_goal: e.target.value})}
+                                className="bg-neutral-950 border border-neutral-800 text-white rounded p-1 text-xs w-full font-mono"
+                              >
+                                <option value="Weight Loss / Toning">Weight Loss / Toning</option>
+                                <option value="Hypertrophy / Muscularity">Hypertrophy / Muscularity</option>
+                                <option value="Powerlifting / Strength">Powerlifting / Strength</option>
+                                <option value="Cardio Fitness / Stamina">Cardio Fitness / Stamina</option>
+                              </select>
+                            </td>
+                            <td className="p-3">
+                              <div className="flex flex-col gap-1">
+                                <label className="text-[9px] text-neutral-500 font-mono uppercase">Coach Option</label>
+                                <select 
+                                  value={editMemberForm.assigned_trainer_id || ""}
+                                  onChange={e => setEditMemberForm({...editMemberForm, assigned_trainer_id: e.target.value, needs_trainer: e.target.value !== ""})}
+                                  className="bg-neutral-950 border border-neutral-800 text-white rounded p-1 text-xs w-full font-mono"
+                                >
+                                  <option value="">Independent Access</option>
+                                  {trainers.map(t => (
+                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <input 
+                                type="date" value={editMemberForm.expiration_date || ""}
+                                onChange={e => setEditMemberForm({...editMemberForm, expiration_date: e.target.value})}
+                                className="bg-neutral-950 border border-neutral-800 text-white rounded p-1 text-xs w-full font-mono text-center"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <select 
+                                value={editMemberForm.status}
+                                onChange={e => setEditMemberForm({...editMemberForm, status: e.target.value as any})}
+                                className="bg-neutral-950 border border-neutral-800 text-white rounded p-1 text-xs w-full font-mono"
+                              >
+                                <option value="Active">Active</option>
+                                <option value="Expired">Expired</option>
+                                <option value="Pending">Pending</option>
+                              </select>
+                            </td>
+                            <td className="p-3 text-right space-x-1 whitespace-nowrap">
+                              <button onClick={handleUpdateMemberSave} className="p-1 bg-emerald-950 border border-emerald-800 rounded text-emerald-400 hover:bg-emerald-900 transition-all">
+                                <Check className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => setEditingMemberId(null)} className="p-1 bg-neutral-850 border border-neutral-700 rounded text-neutral-400 hover:text-white transition-all">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+
                       return (
                         <tr key={m.id} className="hover:bg-neutral-850/50">
                           <td className="p-3">
@@ -704,10 +850,21 @@ export default function UnifiedSystemMatrix() {
                               <span className="text-neutral-600 italic">Independent Access</span>
                             )}
                           </td>
+                          <td className="p-3 text-amber-500 font-medium font-mono text-center">
+                            {m.expiration_date ? m.expiration_date : "Not Programmed"}
+                          </td>
                           <td className="p-3">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${m.status === 'Active' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-red-950 text-red-400 border border-red-800'}`}>
                               {m.status}
                             </span>
+                          </td>
+                          <td className="p-3 text-right space-x-2 whitespace-nowrap">
+                            <button onClick={() => initEditMember(m)} className="text-neutral-400 hover:text-white transition-all">
+                              <Edit3 className="w-4 h-4 inline" />
+                            </button>
+                            <button onClick={() => handleDeleteMemberRow(m.id!)} className="text-neutral-600 hover:text-red-500 transition-all">
+                              <Trash2 className="w-4 h-4 inline" />
+                            </button>
                           </td>
                         </tr>
                       );
@@ -719,7 +876,7 @@ export default function UnifiedSystemMatrix() {
           </div>
         )}
 
-        {/* VIEW C: CLIENT ENROLLMENT WITH LIVE HARDWARE WEBCAM SNAPSHOTTER */}
+        {/* VIEW C: CLIENT ENROLLMENT WITH expiration_date PARAMS */}
         {currentTab === "gym_registration" && (
           <div className="max-w-2xl bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl">
             <div className="p-6 border-b border-neutral-800 bg-neutral-850 border-l-4 border-l-red-600">
@@ -769,7 +926,7 @@ export default function UnifiedSystemMatrix() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
                 <div>
                   <label className="text-neutral-400 font-mono uppercase tracking-wider block mb-1">Membership Plan</label>
                   <select 
@@ -794,6 +951,17 @@ export default function UnifiedSystemMatrix() {
                     <option value="Powerlifting / Strength">Powerlifting / Strength</option>
                     <option value="Cardio Fitness / Stamina">Cardio Fitness / Stamina</option>
                   </select>
+                </div>
+                <div>
+                  <label className="text-neutral-400 font-mono uppercase tracking-wider block mb-1 text-amber-500 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5" /> Plan Expiration Date
+                  </label>
+                  <input 
+                    type="date" required
+                    value={memberForm.expiration_date}
+                    onChange={e => setMemberForm(prev => ({ ...prev, expiration_date: e.target.value }))}
+                    className="w-full bg-neutral-950 border border-amber-900 rounded p-2 text-white focus:outline-none focus:border-red-600 font-mono text-xs text-center" 
+                  />
                 </div>
               </div>
 
@@ -959,8 +1127,6 @@ export default function UnifiedSystemMatrix() {
         {/* VIEW E: MATRIX POINT OF SALE */}
         {currentTab === "gym_pos" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            
-            {/* Products Array Selector Frame */}
             <div className="lg:col-span-7 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
               <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-mono text-xs uppercase text-neutral-300 font-black tracking-wider">
                 Select Inventory Rows to Basket Add
@@ -986,7 +1152,6 @@ export default function UnifiedSystemMatrix() {
               </div>
             </div>
 
-            {/* Shopping Checkout Basket Panel */}
             <div className="lg:col-span-5 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden flex flex-col justify-between">
               <div>
                 <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-mono text-xs uppercase text-neutral-300 font-black tracking-wider flex items-center justify-between">
@@ -1059,8 +1224,6 @@ export default function UnifiedSystemMatrix() {
         {currentTab === "gym_trainers" && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-              
-              {/* Form panel */}
               <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl space-y-4 md:col-span-1">
                 <h3 className="text-sm font-black text-white uppercase font-mono tracking-wider">
                   {editingTrainer ? "Modify Coach Metrics Row" : "Enroll Coaching Staff Profile"}
@@ -1123,7 +1286,6 @@ export default function UnifiedSystemMatrix() {
                 </form>
               </div>
 
-              {/* Display list panel */}
               <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden md:col-span-2">
                 <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-mono text-xs uppercase text-neutral-300 font-bold">
                   Active Coaching Roster Configuration
@@ -1161,7 +1323,6 @@ export default function UnifiedSystemMatrix() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-              {/* Dispatch Form Box */}
               <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl space-y-4">
                 <div className="text-xs font-black font-mono text-white uppercase tracking-wider">Instantiate Dispatch Registry Row</div>
                 <form onSubmit={handleCreateWorkOrder} className="space-y-3 text-xs font-mono">
@@ -1206,7 +1367,6 @@ export default function UnifiedSystemMatrix() {
                 </form>
               </div>
 
-              {/* Active Orders List Tracking layout */}
               <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden lg:col-span-2">
                 <table className="w-full text-left text-xs text-neutral-400">
                   <thead className="bg-neutral-950 font-mono text-neutral-500 uppercase">
@@ -1282,7 +1442,6 @@ export default function UnifiedSystemMatrix() {
               </div>
             </div>
 
-            {/* Matrix Sheet Rows Display Table Grid */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
               <table className="w-full text-left text-xs text-neutral-400">
                 <thead className="bg-neutral-950 font-mono text-neutral-500 uppercase">
@@ -1341,7 +1500,6 @@ export default function UnifiedSystemMatrix() {
         {currentTab === "admin_settings" && isMasterAdmin && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              {/* Form segment */}
               <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl space-y-4">
                 <div className="text-sm font-black font-mono text-white uppercase tracking-wider">Instantiate Terminal Credentials Asset</div>
                 <form onSubmit={handleCreateSystemUser} className="space-y-3 text-xs font-mono">
@@ -1425,7 +1583,6 @@ export default function UnifiedSystemMatrix() {
                 </form>
               </div>
 
-              {/* Security Users table view layout list */}
               <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
                 <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-mono text-xs uppercase text-neutral-300 font-bold">
                   Active Verified Operator Matrix Context
