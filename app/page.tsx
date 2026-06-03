@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 import { 
   Truck, FileSpreadsheet, LogOut, Users, UserPlus, 
   Activity, FileText, X, Dumbbell, BarChart3, Settings, 
   ShieldAlert, Plus, ShoppingCart, Tag, CreditCard, Camera,
-  MapPin, Edit3, UserCheck, Layers
+  MapPin, Edit3, UserCheck, Layers, Trash2, Package, RefreshCw
 } from "lucide-react";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -71,6 +71,13 @@ interface GymMember {
   photo_url?: string;
 }
 
+interface InventoryItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
 interface TrainerProfile {
   id: string;
   name: string;
@@ -102,7 +109,13 @@ export default function UnifiedSystemMatrix() {
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [gymMembers, setGymMembers] = useState<GymMember[]>([]);
   const [systemUsersList, setSystemUsersList] = useState<SystemUser[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [selectedPayslip, setSelectedPayslip] = useState<PayrollRecord | null>(null);
+
+  // --- Live Webcam Controls ---
+  const [isWebcamActive, setIsWebcamActive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // --- Trainer State Management ---
   const [trainers, setTrainers] = useState<TrainerProfile[]>([
@@ -115,19 +128,15 @@ export default function UnifiedSystemMatrix() {
   const [posCart, setPosCart] = useState<CartItem[]>([]);
   const [posCustomerName, setPosCustomerName] = useState("");
   const [posPaymentMethod, setPosPaymentMethod] = useState("Cash Tender");
-  const posInventory = [
-    { id: "p1", name: "Whey Protein Shake (Post-Workout)", price: 1500 },
-    { id: "p2", name: "Pre-Workout Monster Blend Drink", price: 800 },
-    { id: "p3", name: "Lyft Gym Matrix Premium Shaker", price: 2500 },
-    { id: "p4", name: "Heavy Duty Lifting Wrist Wraps", price: 3000 },
-    { id: "p5", name: "Day Pass Access Ticket", price: 2000 },
-  ];
 
   // --- Logistics Form Binding ---
   const [newPlate, setNewPlate] = useState("");
   const [newDriver, setNewDriver] = useState("");
   const [newDest, setNewDest] = useState("");
   const [newCargo, setNewCargo] = useState("Gym Equipment Iron Mat");
+
+  // --- Inventory Form Binding ---
+  const [inventoryForm, setInventoryForm] = useState({ name: "", price: 0, quantity: 0 });
 
   // --- Gym Registration Form (Fully Extended Restored Params) ---
   const [memberForm, setMemberForm] = useState({
@@ -171,6 +180,7 @@ export default function UnifiedSystemMatrix() {
         fetchGymData();
       }
     }
+    return () => stopWebcamStream(); // Safety cleanup for hot reloading
   }, [currentUser]);
 
   const calculateCartTotal = () => {
@@ -180,6 +190,7 @@ export default function UnifiedSystemMatrix() {
   const fetchAllMatrixData = async () => {
     fetchTruckingData();
     fetchGymData();
+    fetchInventoryData();
     const { data: users } = await supabase.from("system_users").select("*");
     if (users) setSystemUsersList(users);
   };
@@ -192,8 +203,13 @@ export default function UnifiedSystemMatrix() {
   };
 
   const fetchGymData = async () => {
-    const { data: members } = await supabase.from("gym_members").select("*");
-    if (members) setGymMembers(members);
+    const { data: members, error } = await supabase.from("gym_members").select("*");
+    if (!error && members) setGymMembers(members);
+  };
+
+  const fetchInventoryData = async () => {
+    const { data: stock, error } = await supabase.from("inventory").select("*").order("name", { ascending: true });
+    if (!error && stock) setInventoryItems(stock);
   };
 
   const handleSystemLogin = async (e: React.FormEvent) => {
@@ -213,11 +229,48 @@ export default function UnifiedSystemMatrix() {
     setCurrentUser(data);
   };
 
+  // --- Live Device Webcam Logic ---
+  const startWebcamStream = async () => {
+    try {
+      setIsWebcamActive(true);
+      const constraints = { video: { width: 320, height: 320, facingMode: "user" } };
+      const localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = localStream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = localStream;
+      }
+    } catch (err) {
+      alert("Unable to open device stream asset frame. Check hardware/permissions.");
+      setIsWebcamActive(false);
+    }
+  };
+
+  const stopWebcamStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsWebcamActive(false);
+  };
+
+  const captureWebcamSnapshot = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 320;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0, 320, 320);
+      const dataUrl = canvas.toDataURL("image/jpeg");
+      setMemberForm(prev => ({ ...prev, photo_url: dataUrl }));
+      stopWebcamStream();
+    }
+  };
+
   const handleRegisterMember = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload = {
       ...memberForm,
-      // Default to layout's current branch focus if it matches form parameters
       assigned_branch: memberForm.assigned_branch
     };
 
@@ -236,6 +289,36 @@ export default function UnifiedSystemMatrix() {
     }
   };
 
+  // --- Supabase Backed Inventory Logic Operations ---
+  const handleAddInventory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inventoryForm.name || inventoryForm.price <= 0) return;
+
+    const { error } = await supabase.from("inventory").insert([inventoryForm]);
+    if (!error) {
+      setInventoryForm({ name: "", price: 0, quantity: 0 });
+      fetchInventoryData();
+    } else {
+      alert(`Error saving inventory block: ${error.message}`);
+    }
+  };
+
+  const handleUpdateStockQty = async (id: string, nextQty: number) => {
+    if (nextQty < 0) return;
+    const { error } = await supabase.from("inventory").update({ quantity: nextQty }).eq("id", id);
+    if (!error) fetchInventoryData();
+  };
+
+  const handleDeleteInventoryItem = async (id: string) => {
+    if (!confirm("Are you sure you want to drop this stock entry row from the central matrix?")) return;
+    const { error } = await supabase.from("inventory").delete().eq("id", id);
+    if (!error) {
+      fetchInventoryData();
+      // Drop from checkout basket if present
+      setPosCart(prev => prev.filter(item => item.id !== id));
+    }
+  };
+
   const handleCreateSystemUser = async (e: React.FormEvent) => {
     e.preventDefault();
     const { error } = await supabase.from("system_users").insert([sysUserForm]);
@@ -246,7 +329,6 @@ export default function UnifiedSystemMatrix() {
     }
   };
 
-  // --- Trainer Logic Modifications ---
   const handleAddOrUpdateTrainer = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingTrainer) {
@@ -277,21 +359,40 @@ export default function UnifiedSystemMatrix() {
     fetchTruckingData();
   };
 
-  const addToCart = (product: typeof posInventory[0]) => {
+  const addToCart = (product: InventoryItem) => {
+    if (product.quantity <= 0) {
+      alert("Item row shows zero matching units left in available warehouse registry.");
+      return;
+    }
     setPosCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
+        if (existing.quantity >= product.quantity) {
+          alert("Cannot exceed maximum available database quantity levels.");
+          return prev;
+        }
         return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { id: product.id, name: product.name, price: product.price, quantity: 1 }];
     });
   };
 
-  const handleProcessCheckout = () => {
+  const handleProcessCheckout = async () => {
     if (posCart.length === 0) return;
+    
+    // Reduce real numbers inside Supabase inventory table
+    for (const item of posCart) {
+      const match = inventoryItems.find(i => i.id === item.id);
+      if (match) {
+        const remaining = match.quantity - item.quantity;
+        await supabase.from("inventory").update({ quantity: remaining >= 0 ? remaining : 0 }).eq("id", item.id);
+      }
+    }
+
     alert(`POS Checkout Finalized!\nCustomer: ${posCustomerName || "Walk-In"}\nTotal Ring: $${calculateCartTotal().toLocaleString()} GYD\nMethod: ${posPaymentMethod}\nLocation Base: ${activeBranchContext}`);
     setPosCart([]);
     setPosCustomerName("");
+    fetchInventoryData();
   };
 
   // --- Excel Parser Mapping Logic ---
@@ -395,6 +496,9 @@ export default function UnifiedSystemMatrix() {
                 <button onClick={() => setCurrentTab("gym_registration")} className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-semibold transition-all ${currentTab === "gym_registration" ? "bg-red-600 text-white shadow-md shadow-red-900/20" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}>
                   <UserPlus className="w-4 h-4" /> Enroll Clients
                 </button>
+                <button onClick={() => setCurrentTab("inventory_ledger")} className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-semibold transition-all ${currentTab === "inventory_ledger" ? "bg-red-600 text-white shadow-md shadow-red-900/20" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}>
+                  <Package className="w-4 h-4" /> Stock Control Matrix
+                </button>
                 <button onClick={() => setCurrentTab("gym_pos")} className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-semibold transition-all ${currentTab === "gym_pos" ? "bg-red-600 text-white shadow-md shadow-red-900/20" : "text-neutral-400 hover:bg-neutral-800 hover:text-white"}`}>
                   <ShoppingCart className="w-4 h-4" /> Matrix POS Check
                 </button>
@@ -453,7 +557,7 @@ export default function UnifiedSystemMatrix() {
                 <Layers className="w-3 h-3 text-red-500" /> Branch:
               </span>
               {["Sheriff Street", "Main Street", "Tower Node", "Mahaica Branch"].map((branch) => (
-                <button key={branch} onClick={() => setActiveBranchContext(branch)} className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${activeBranchContext === branch ? "bg-red-600 text-white shadow" : "text-neutral-400 hover:text-white hover:bg-neutral-800"}`}>
+                <button key={branch} onClick={() => { setActiveBranchContext(branch); fetchInventoryData(); }} className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${activeBranchContext === branch ? "bg-red-600 text-white shadow" : "text-neutral-400 hover:text-white hover:bg-neutral-800"}`}>
                   {branch.split(" ")[0]}
                 </button>
               ))}
@@ -483,8 +587,8 @@ export default function UnifiedSystemMatrix() {
                 <div className="text-3xl font-black mt-2 text-white">{filteredTrainers.length} Active Roster</div>
               </div>
               <div className="bg-neutral-900 border border-neutral-800 p-5 rounded-xl">
-                <div className="text-xs font-mono uppercase tracking-wider text-neutral-500">Terminal Security Token</div>
-                <div className="text-3xl font-black mt-2 text-emerald-500">Verified</div>
+                <div className="text-xs font-mono uppercase tracking-wider text-neutral-500">Bar Inventory Lines</div>
+                <div className="text-3xl font-black mt-2 text-amber-500">{inventoryItems.length} Registered Row SKU's</div>
               </div>
             </div>
           </div>
@@ -527,9 +631,9 @@ export default function UnifiedSystemMatrix() {
                         <tr key={m.id} className="hover:bg-neutral-850/50">
                           <td className="p-3">
                             {m.photo_url ? (
-                              <img src={m.photo_url} alt="" className="w-10 h-10 object-cover rounded border border-neutral-700" />
+                              <img src={m.photo_url} alt="" className="w-10 h-10 object-cover rounded border border-neutral-700 shadow" />
                             ) : (
-                              <div className="w-10 h-10 bg-neutral-900 flex items-center justify-center text-neutral-600 border border-neutral-800 rounded"><Camera className="w-4 h-4" /></div>
+                              <div className="w-10 h-10 bg-neutral-950 flex items-center justify-center text-neutral-600 border border-neutral-800 rounded"><Camera className="w-4 h-4" /></div>
                             )}
                           </td>
                           <td className="p-3 font-sans font-bold text-neutral-200">
@@ -562,7 +666,7 @@ export default function UnifiedSystemMatrix() {
           </div>
         )}
 
-        {/* VIEW C: CLIENT ENROLLMENT WITH RESTORED CRITICAL PARAMETERS */}
+        {/* VIEW C: CLIENT ENROLLMENT WITH LIVE HARDWARE WEBCAM SNAPSHOTTER */}
         {currentTab === "gym_registration" && (
           <div className="max-w-2xl bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl">
             <div className="p-6 border-b border-neutral-800 bg-neutral-850 border-l-4 border-l-red-600">
@@ -593,16 +697,42 @@ export default function UnifiedSystemMatrix() {
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs text-neutral-400 font-mono uppercase">Digital Profile Image Asset (URL Link)</label>
-                <div className="flex gap-3 items-center">
-                  <div className="relative flex-1">
-                    <input type="text" value={memberForm.photo_url} onChange={e => setMemberForm({...memberForm, photo_url: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 pl-9 rounded text-white text-xs font-mono focus:outline-none focus:border-red-600" placeholder="https://images.com/member-photo.jpg" />
-                    <Camera className="w-3.5 h-3.5 text-neutral-600 absolute left-3 top-3.5" />
+              {/* RESTORED LIVE MEDIA WEBCAM FRAME MODULE */}
+              <div className="bg-neutral-950 p-4 border border-neutral-850 rounded-lg space-y-3">
+                <label className="text-xs text-neutral-400 font-mono uppercase block">Profile Security Photo Asset Integration</label>
+                
+                <div className="flex flex-col sm:flex-row gap-4 items-center">
+                  <div className="w-32 h-32 bg-neutral-900 border border-neutral-800 rounded-lg flex items-center justify-center overflow-hidden relative">
+                    {memberForm.photo_url ? (
+                      <img src={memberForm.photo_url} alt="Profile Asset" className="w-full h-full object-cover" />
+                    ) : (
+                      <Camera className="w-8 h-8 text-neutral-700" />
+                    )}
                   </div>
-                  {memberForm.photo_url && (
-                    <img src={memberForm.photo_url} alt="Staged Preview" className="w-10 h-10 object-cover rounded border border-neutral-700" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
-                  )}
+
+                  <div className="flex-1 space-y-2 w-full">
+                    {!isWebcamActive ? (
+                      <button type="button" onClick={startWebcamStream} className="w-full sm:w-auto bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 text-xs font-bold px-3 py-2 rounded flex items-center justify-center gap-1.5 transition-all">
+                        <Camera className="w-4 h-4 text-red-500" /> Activate Device Webcam
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="border border-neutral-800 rounded overflow-hidden bg-black w-full max-w-[240px]">
+                          <video ref={videoRef} autoPlay playsInline className="w-full h-auto scale-x-[-1]" />
+                        </div>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={captureWebcamSnapshot} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded transition-all">
+                            Capture Profile Frame
+                          </button>
+                          <button type="button" onClick={stopWebcamStream} className="bg-neutral-800 hover:bg-neutral-700 text-neutral-400 text-xs px-2 py-1.5 rounded transition-all">
+                            Kill Stream
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <div className="text-[10px] text-neutral-500 font-mono">Or supply direct URL asset reference location link below:</div>
+                    <input type="text" value={memberForm.photo_url} onChange={e => setMemberForm({...memberForm, photo_url: e.target.value})} className="w-full bg-neutral-900 border border-neutral-800 p-2 rounded text-xs text-white font-mono focus:outline-none focus:border-red-600" placeholder="https://images.com/manual-link.jpg" />
+                  </div>
                 </div>
               </div>
 
@@ -640,7 +770,7 @@ export default function UnifiedSystemMatrix() {
                 {memberForm.needs_trainer && (
                   <div className="space-y-1 animate-fadeIn pt-1">
                     <label className="text-[11px] text-red-400 font-mono uppercase tracking-wider block">Select Active Coach Asset</label>
-                    <select value={memberForm.assigned_trainer_id} onChange={e => setMemberForm({...memberForm, assigned_trainer_id: e.target.value})} className="w-full bg-neutral-900 border border-neutral-800 p-2 rounded text-xs text-white focus:outline-none focus:border-red-600">
+                    <select value={memberForm.assigned_trainer_id} onChange={e => setMemberForm({...assigned_trainer_id, assigned_trainer_id: e.target.value})} className="w-full bg-neutral-900 border border-neutral-800 p-2 rounded text-xs text-white focus:outline-none focus:border-red-600">
                       {trainers.map(t => (
                         <option key={t.id} value={t.id}>{t.name} — {t.tier} ({t.assigned_branch})</option>
                       ))}
@@ -656,7 +786,82 @@ export default function UnifiedSystemMatrix() {
           </div>
         )}
 
-        {/* VIEW D: POINT OF SALE MODULE */}
+        {/* NEW SYSTEM VIEW: SUPABASE BACKED INVENTORY MANAGEMENT CONTROLLER */}
+        {currentTab === "inventory_ledger" && (
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl">
+              <div className="p-5 bg-neutral-850 border-b border-neutral-800 font-bold text-xs uppercase tracking-wide text-white">
+                Inject Product Stock Row
+              </div>
+              <form onSubmit={handleAddInventory} className="p-5 space-y-4 text-xs">
+                <div className="space-y-1">
+                  <label className="text-neutral-400 font-mono uppercase">Product Stock Display Name</label>
+                  <input type="text" value={inventoryForm.name} onChange={e => setInventoryForm({...inventoryForm, name: e.target.value})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600" placeholder="e.g. Mass Gainer Shake (Vanilla)" required />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-neutral-400 font-mono uppercase">Unit Price (GYD)</label>
+                    <input type="number" value={inventoryForm.price || ""} onChange={e => setInventoryForm({...inventoryForm, price: parseInt(e.target.value) || 0})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 font-mono" placeholder="1500" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-neutral-400 font-mono uppercase">Starting Quantity</label>
+                    <input type="number" value={inventoryForm.quantity || ""} onChange={e => setInventoryForm({...inventoryForm, quantity: parseInt(e.target.value) || 0})} className="w-full bg-neutral-950 border border-neutral-800 p-2.5 rounded text-white focus:outline-none focus:border-red-600 font-mono" placeholder="25" required />
+                  </div>
+                </div>
+                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold p-2.5 rounded text-center transition-all uppercase tracking-wider text-[11px]">
+                  Commit Stock SKU
+                </button>
+              </form>
+            </div>
+
+            <div className="xl:col-span-2 bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+              <div className="p-4 bg-neutral-850 border-b border-neutral-800 font-bold text-xs uppercase tracking-wider text-white flex justify-between items-center">
+                <span>Warehouse Bar Ledger Matrix</span>
+                <button onClick={fetchInventoryData} className="text-neutral-400 hover:text-white inline-flex items-center gap-1 text-[10px] font-mono">
+                  <RefreshCw className="w-3 h-3" /> Sync Supabase
+                </button>
+              </div>
+              <table className="w-full text-left text-xs text-neutral-400">
+                <thead className="bg-neutral-950 font-mono text-neutral-500 uppercase">
+                  <tr>
+                    <th className="p-3">Product Name Structure</th>
+                    <th className="p-3">Unit Valuation</th>
+                    <th className="p-3 text-center">In-Stock Volume</th>
+                    <th className="p-3 text-right">Ledger Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800 font-mono">
+                  {inventoryItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center italic text-neutral-600 font-sans">No product rows returned from the Supabase inventory ledger.</td>
+                    </tr>
+                  ) : (
+                    inventoryItems.map(item => (
+                      <tr key={item.id} className="hover:bg-neutral-850/40">
+                        <td className="p-3 text-neutral-200 font-bold font-sans">{item.name}</td>
+                        <td className="p-3 text-red-500 font-bold">${item.price.toLocaleString()} GYD</td>
+                        <td className="p-3">
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => handleUpdateStockQty(item.id, item.quantity - 1)} className="bg-neutral-950 border border-neutral-800 px-1.5 py-0.5 rounded text-neutral-400 hover:text-white">-</button>
+                            <span className={`w-8 text-center font-bold ${item.quantity === 0 ? 'text-red-500 animate-pulse' : 'text-neutral-300'}`}>{item.quantity}</span>
+                            <button onClick={() => handleUpdateStockQty(item.id, item.quantity + 1)} className="bg-neutral-950 border border-neutral-800 px-1.5 py-0.5 rounded text-neutral-400 hover:text-white">+</button>
+                          </div>
+                        </td>
+                        <td className="p-3 text-right">
+                          <button onClick={() => handleDeleteInventoryItem(item.id)} className="bg-neutral-950 hover:bg-red-950 text-red-400 border border-neutral-800 hover:border-red-900 p-1 rounded transition-all">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW D: POINT OF SALE MODULE (POOLS LIVE DATA FROM SUPABASE) */}
         {currentTab === "gym_pos" && (
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
             <div className="xl:col-span-2 bg-neutral-900 border border-neutral-800 rounded-xl p-6 space-y-4">
@@ -665,18 +870,19 @@ export default function UnifiedSystemMatrix() {
                   <Tag className="w-5 h-5 text-red-500" />
                   Matrix Inventory Bar Counter
                 </h3>
-                <p className="text-xs text-neutral-400 mt-0.5">Select stock rows below to instantly compile parameters onto the active branch register.</p>
+                <p className="text-xs text-neutral-400 mt-0.5">Select real stock rows pooled from Supabase to compile parameters onto checkout.</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {posInventory.map((prod) => (
+                {inventoryItems.map((prod) => (
                   <div key={prod.id} className="bg-neutral-950 border border-neutral-800 p-4 rounded-lg flex justify-between items-center hover:border-neutral-700 transition-all">
                     <div>
                       <h4 className="text-sm font-bold text-neutral-200">{prod.name}</h4>
                       <div className="text-xs text-red-500 font-mono font-bold mt-1">${prod.price.toLocaleString()} GYD</div>
+                      <div className="text-[10px] text-neutral-500 font-mono mt-0.5">Avail: {prod.quantity} units</div>
                     </div>
-                    <button onClick={() => addToCart(prod)} className="bg-neutral-900 hover:bg-red-600 border border-neutral-800 hover:border-red-600 text-neutral-300 hover:text-white px-3 py-1.5 rounded text-xs font-bold font-mono transition-all">
-                      + Stage
+                    <button onClick={() => addToCart(prod)} disabled={prod.quantity <= 0} className={`px-3 py-1.5 rounded text-xs font-bold font-mono transition-all ${prod.quantity > 0 ? 'bg-neutral-900 hover:bg-red-600 border border-neutral-800 hover:border-red-600 text-neutral-300 hover:text-white' : 'bg-neutral-950 text-neutral-700 border border-neutral-900 cursor-not-allowed'}`}>
+                      {prod.quantity > 0 ? "+ Stage" : "Stock Out"}
                     </button>
                   </div>
                 ))}
