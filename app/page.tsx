@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-// Keeps your native path shortcuts fully intact
-import { supabase } from '@/app/utils/supabase';
+// Corrected to a clean relative path to resolve the Next.js module-not-found build failure
+import { supabase } from './utils/supabase';
 import * as XLSX from 'xlsx';
 
 // ==========================================
@@ -323,6 +323,17 @@ export default function LyftNetworkMasterControl() {
       videoStream.getTracks().forEach(track => track.stop());
       setVideoStream(null);
     }
+  };
+
+  // Manual Photo File Load Handler
+  const handleManualPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setCapturedPhoto(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   // Gym Operations Handlers
